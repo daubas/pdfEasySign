@@ -47,33 +47,39 @@
         <div id="controlsAndPdfContainer" class="hidden my-4">
             <div id="zoomControls" class="sticky top-0 z-10">
                 <!-- PDF Zoom Controls -->
-                <button id="pdfZoomOutButton" title="縮小文件">-</button>
-                <div id="pdfZoomReset" class="font-medium px-2 cursor-pointer" title="重設縮放">
-                    文件縮放 <span id="pdfZoomIndicator">100%</span>
+                <div class="control-group">
+                    <button id="pdfZoomOutButton" title="縮小文件">-</button>
+                    <div id="pdfZoomReset" class="font-medium px-2 cursor-pointer" title="重設縮放">
+                        文件縮放 <span id="pdfZoomIndicator">100%</span>
+                    </div>
+                    <button id="pdfZoomInButton" title="放大文件">+</button>
                 </div>
-                <button id="pdfZoomInButton" title="放大文件">+</button>
-                <div class="border-l h-6 mx-3 opacity-30"></div>
 
                 <!-- Signature Zoom Controls -->
-                <button id="zoomOutButton" title="縮小簽名">-</button>
-                <span class="font-medium px-2">簽名縮放</span>
-                <button id="zoomInButton" title="放大簽名">+</button>
-                <div class="border-l h-6 mx-3 opacity-30"></div>
+                <div class="control-group">
+                    <button id="zoomOutButton" title="縮小簽名">-</button>
+                    <span class="font-medium px-2">簽名縮放</span>
+                    <button id="zoomInButton" title="放大簽名">+</button>
+                </div>
 
                 <!-- Confirm Position -->
-                <button id="confirmPositionButton" disabled>確認位置</button>
-                <div class="border-l h-6 mx-3 opacity-30"></div>
+                <div class="control-group">
+                    <button id="confirmPositionButton" disabled>確認位置</button>
+                </div>
 
                 <!-- History -->
-                <button id="pdfUndoButton" disabled>上一步</button>
-                <span class="font-medium px-2">操作歷史</span>
-                <button id="pdfRedoButton" disabled>下一步</button>
-                <div class="border-l h-6 mx-3 opacity-30"></div>
+                <div class="control-group">
+                    <button id="pdfUndoButton" disabled>上一步</button>
+                    <span class="font-medium px-2">操作歷史</span>
+                    <button id="pdfRedoButton" disabled>下一步</button>
+                </div>
 
                 <!-- Page Navigation -->
-                <button id="prevPageButton" disabled>‹ 上一頁</button>
-                <span id="pageIndicator" class="font-medium px-2">頁碼 0 / 0</span>
-                <button id="nextPageButton" disabled>下一頁 ›</button>
+                <div class="control-group">
+                    <button id="prevPageButton" disabled>‹ 上一頁</button>
+                    <span id="pageIndicator" class="font-medium px-2">頁碼 0 / 0</span>
+                    <button id="nextPageButton" disabled>下一頁 ›</button>
+                </div>
             </div>
             
             <div id="pdfContainer" class="overflow-x-auto mt-4">
