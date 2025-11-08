@@ -49,8 +49,6 @@ const UI = {
         fileNameInput: document.getElementById('fileName'),
         signatureModal: document.getElementById('signatureModal'),
         signaturePadCanvas: document.getElementById('signaturePad'),
-        pdfUndoButton: document.getElementById('pdfUndoButton'),
-        pdfRedoButton: document.getElementById('pdfRedoButton'),
         prevPageButton: document.getElementById('prevPageButton'),
         nextPageButton: document.getElementById('nextPageButton'),
         pageIndicator: document.getElementById('pageIndicator'),
@@ -80,8 +78,6 @@ const UI = {
         this.elements.controlsAndPdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
         this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
         this.showMessage(state.ui.message.text, state.ui.message.type);
-        this.elements.pdfUndoButton.disabled = state.historyPointer <= 0;
-        this.elements.pdfRedoButton.disabled = state.historyPointer >= state.history.length - 1;
         this.elements.pageIndicator.textContent = `頁碼 ${state.currentPageNum} / ${state.totalPages}`;
         this.elements.prevPageButton.disabled = state.currentPageNum <= 1;
         this.elements.nextPageButton.disabled = state.currentPageNum >= state.totalPages;
