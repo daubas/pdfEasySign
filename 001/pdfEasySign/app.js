@@ -4,23 +4,17 @@
 const { PDFDocument, rgb } = PDFLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
 
-
 // ==================================================================================
 // 1. State Management (The single source of truth)
 // ==================================================================================
-
 const state = {
     pdfDoc: null,
     originalPdfBytes: null,
     currentPageNum: 1,
     totalPages: 0,
-    currentPdfPage: null, // The rendered page object from pdf.js
+    currentPdfPage: null,
     scale: 1.5,
-    signature: {
-        dataUrl: null,
-        placement: null,
-        zoom: 1.0,
-    },
+    signature: { dataUrl: null, placement: null, zoom: 1.0 },
     history: [],
     historyPointer: -1,
     ui: {
@@ -33,7 +27,6 @@ const state = {
 };
 
 function updateState(newState) {
-    // Simple assign, caller is responsible for passing the correct structure
     Object.assign(state, newState);
     UI.render();
 }
@@ -41,7 +34,6 @@ function updateState(newState) {
 // ==================================================================================
 // 2. UI Module (Handles all DOM manipulations)
 // ==================================================================================
-
 const UI = {
     elements: {
         uploadContainer: document.getElementById('uploadContainer'),
@@ -78,10 +70,8 @@ const UI = {
         this.elements.pdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
         this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
         this.showMessage(state.ui.message.text, state.ui.message.type);
-        
         this.elements.pdfUndoButton.disabled = state.historyPointer <= 0;
         this.elements.pdfRedoButton.disabled = state.historyPointer >= state.history.length - 1;
-
         this.elements.pageIndicator.textContent = `頁碼 ${state.currentPageNum} / ${state.totalPages}`;
         this.elements.prevPageButton.disabled = state.currentPageNum <= 1;
         this.elements.nextPageButton.disabled = state.currentPageNum >= state.totalPages;
@@ -89,27 +79,18 @@ const UI = {
 
     async renderPdfPage(pageNum) {
         if (!state.pdfDoc) return;
-
-        // FIX: Do not clear placement when just rendering. Clearing should be a separate action.
-        // updateState({ ...state, signature: { ...state.signature, placement: null } });
-
         const page = await state.pdfDoc.getPage(pageNum);
-        state.currentPdfPage = page; // Direct mutation for the rendered page object
-
+        state.currentPdfPage = page;
         const containerWidth = this.elements.pdfContainer.clientWidth * 0.95;
         const viewportAtScale1 = page.getViewport({ scale: 1 });
         const scale = containerWidth / viewportAtScale1.width;
         state.scale = scale;
-
         const viewport = page.getViewport({ scale });
         const context = this.elements.pdfCanvas.getContext('2d');
         this.elements.pdfCanvas.height = viewport.height;
         this.elements.pdfCanvas.width = viewport.width;
-
         await page.render({ canvasContext: context, viewport }).promise;
-        console.log(`Page ${pageNum} rendered with scale:`, scale);
-        
-        // Always redraw signature if it exists for the current view
+        console.log(`Page ${pageNum} rendered.`);
         if (state.signature.dataUrl && state.signature.placement) {
             this.drawSignaturePreview();
         }
@@ -130,63 +111,50 @@ const UI = {
         sigImage.src = dataUrl;
     },
 
-    initializeSignaturePad() { /* ... no changes ... */ },
-    openSignatureModal() { /* ... no changes ... */ },
-    closeSignatureModal() { /* ... no changes ... */ },
+    initializeSignaturePad() {
+        const canvas = this.elements.signaturePadCanvas;
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        canvas.width = canvas.offsetWidth * ratio;
+        canvas.height = canvas.offsetHeight * ratio;
+        canvas.getContext("2d").scale(ratio, ratio);
+        if (state.signaturePadInstance) state.signaturePadInstance.off();
+        state.signaturePadInstance = new SignaturePad(canvas, {
+            backgroundColor: 'rgb(249, 249, 249)', penColor: 'rgb(0, 0, 0)',
+        });
+    },
+    openSignatureModal() {
+        this.elements.signatureModal.style.display = 'flex';
+        if (!state.signaturePadInstance) this.initializeSignaturePad();
+        state.signaturePadInstance.clear();
+    },
+    closeSignatureModal() { this.elements.signatureModal.style.display = 'none'; },
 };
 
 // ==================================================================================
-// 3. PDF Module (Handles core PDF processing logic)
+// 3. PDF Module (Handles core PDF processing logic) - NOW PURE
 // ==================================================================================
-
 const PDF = {
-    // FIX: Correctly update state without spreading old, incorrect values.
     async loadPdf(pdfBytes) {
         const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
         const pdfDoc = await loadingTask.promise;
-        const page = await pdfDoc.getPage(1); // Also get the first page
-        
-        // This is the single point of update after loading.
-        updateState({
-            ...state,
-            originalPdfBytes: pdfBytes,
-            pdfDoc: pdfDoc,
-            currentPdfPage: page, // CRITICAL: Set the first page object
-            currentPageNum: 1,
-            totalPages: pdfDoc.numPages,
-        });
+        return { pdfDoc, totalPages: pdfDoc.numPages };
     },
-
     async embedSignature() {
-        const { originalPdfBytes, signature, currentPageNum } = state;
-        if (!originalPdfBytes || !signature.dataUrl || !signature.placement) {
-            throw new Error('缺少 PDF、簽名或放置位置的資料。');
-        }
+        const { originalPdfBytes, signature, currentPageNum, currentPdfPage, scale } = state;
+        if (!originalPdfBytes || !signature.dataUrl || !signature.placement) throw new Error('缺少 PDF、簽名或放置位置的資料。');
         const pdfDoc = await PDFDocument.load(originalPdfBytes);
         const pageToSign = pdfDoc.getPages()[currentPageNum - 1];
         const { width: pageWidth, height: pageHeight } = pageToSign.getSize();
-        
         const sigImageBytes = await fetch(signature.dataUrl).then(res => res.arrayBuffer());
         const sigImage = await pdfDoc.embedPng(sigImageBytes);
-        
-        const viewport = state.currentPdfPage.getViewport({ scale: state.scale });
+        const viewport = currentPdfPage.getViewport({ scale });
         const scaleX = pageWidth / viewport.width;
         const scaleY = pageHeight / viewport.height;
-        
-        const baseSigWidthPoints = 120;
-        const baseSigHeightPoints = 60;
-        const sigWidthPoints = baseSigWidthPoints * signature.zoom;
-        const sigHeightPoints = baseSigHeightPoints * signature.zoom;
-        
+        const sigWidthPoints = 120 * signature.zoom;
+        const sigHeightPoints = 60 * signature.zoom;
         const pdfX = signature.placement.x * scaleX;
         const pdfY = pageHeight - (signature.placement.y * scaleY) - sigHeightPoints;
-        
-        pageToSign.drawImage(sigImage, {
-            x: pdfX,
-            y: pdfY,
-            width: sigWidthPoints,
-            height: sigHeightPoints,
-        });
+        pageToSign.drawImage(sigImage, { x: pdfX, y: pdfY, width: sigWidthPoints, height: sigHeightPoints });
         return await pdfDoc.save();
     },
 };
@@ -200,58 +168,43 @@ const History = {
             placement: state.signature.placement,
             dataUrl: state.signature.dataUrl,
             zoom: state.signature.zoom,
-            pageNum: state.currentPageNum, // Also save page number
+            pageNum: state.currentPageNum,
         };
         const newHistory = state.history.slice(0, state.historyPointer + 1);
         state.history = [...newHistory, currentState];
         state.historyPointer = state.history.length - 1;
         UI.render();
     },
-
     undo() {
         if (state.historyPointer > 0) {
             const newPointer = state.historyPointer - 1;
             const previousState = state.history[newPointer];
-            updateState({
-                ...state,
-                historyPointer: newPointer,
-                currentPageNum: previousState.pageNum,
-                signature: { ...state.signature, ...previousState },
-            });
+            updateState({ ...state, historyPointer: newPointer, currentPageNum: previousState.pageNum, signature: { ...state.signature, ...previousState } });
             UI.renderPdfPage(previousState.pageNum);
         }
     },
-
     redo() {
         if (state.historyPointer < state.history.length - 1) {
             const newPointer = state.historyPointer + 1;
             const nextState = state.history[newPointer];
-            updateState({
-                ...state,
-                historyPointer: newPointer,
-                currentPageNum: nextState.pageNum,
-                signature: { ...state.signature, ...nextState },
-            });
+            updateState({ ...state, historyPointer: newPointer, currentPageNum: nextState.pageNum, signature: { ...state.signature, ...nextState } });
             UI.renderPdfPage(nextState.pageNum);
         }
     },
 };
 
 // ==================================================================================
-// 5. Event Handlers (The "Controller" layer)
+// 5. Event Handlers (The "Controller" layer) - CLEANED UP
 // ==================================================================================
-
 const Events = {
     async handleFileUpload(e) {
         const file = e.target.files[0];
         if (!file) return;
-
         const fileSizeLimit = 10 * 1024 * 1024;
         if (file.size > fileSizeLimit) {
             updateState({ ...state, ui: { ...state.ui, message: { text: '錯誤：檔案大小不能超過 10MB。', type: 'error' } } });
             return;
         }
-
         if (file.type !== 'application/pdf') {
             updateState({ ...state, ui: { ...state.ui, message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
             return;
@@ -260,12 +213,16 @@ const Events = {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                await PDF.loadPdf(event.target.result);
+                const pdfData = await PDF.loadPdf(event.target.result);
                 updateState({
                     ...state,
+                    originalPdfBytes: event.target.result,
+                    pdfDoc: pdfData.pdfDoc,
+                    totalPages: pdfData.totalPages,
+                    currentPageNum: 1,
                     ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
-                await UI.renderPdfPage(state.currentPageNum);
+                await UI.renderPdfPage(1);
                 History.saveState();
             } catch (err) {
                 console.error('載入 PDF 失敗:', err);
@@ -279,7 +236,6 @@ const Events = {
         if (!state.currentPdfPage) return;
         const rect = UI.elements.pdfCanvas.getBoundingClientRect();
         const placement = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        
         if (!state.signature.dataUrl) {
             state.signature.placement = placement;
             UI.openSignatureModal();
@@ -291,10 +247,7 @@ const Events = {
     },
 
     handleSaveSignature() {
-        if (state.signaturePadInstance.isEmpty()) {
-            alert('簽名欄位是空的。');
-            return;
-        }
+        if (state.signaturePadInstance.isEmpty()) { alert('簽名欄位是空的。'); return; }
         const dataUrl = state.signaturePadInstance.toDataURL('image/png');
         updateState({
             ...state,
@@ -308,27 +261,83 @@ const Events = {
 
     async handlePageChange(direction) {
         let newPageNum = state.currentPageNum;
-        if (direction === 'next' && newPageNum < state.totalPages) {
-            newPageNum++;
-        } else if (direction === 'prev' && newPageNum > 1) {
-            newPageNum--;
-        }
-
+        if (direction === 'next' && newPageNum < state.totalPages) newPageNum++;
+        else if (direction === 'prev' && newPageNum > 1) newPageNum--;
         if (newPageNum !== state.currentPageNum) {
-            // When changing page, we clear the signature placement for that page
             updateState({ ...state, currentPageNum: newPageNum, signature: { ...state.signature, placement: null } });
             await UI.renderPdfPage(newPageNum);
             History.saveState();
         }
     },
 
-    async handleDownload() { /* ... no changes ... */ },
-    handleZoom(direction) { /* ... no changes ... */ },
-    handleResize() { /* ... no changes ... */ },
-    bind() { /* ... no changes ... */ }
+    async handleDownload() {
+        updateState({ ...state, ui: { ...state.ui, message: { text: '正在處理 PDF...', type: 'loading' } } });
+        try {
+            const pdfBytes = await PDF.embedSignature();
+            let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
+            if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            updateState({ ...state, ui: { ...state.ui, message: { text: '處理完成！', type: 'success' } } });
+        } catch (err) {
+            console.error('嵌入簽名失敗:', err);
+            updateState({ ...state, ui: { ...state.ui, message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
+        }
+    },
+
+    handleZoom(direction) {
+        let newZoom = state.signature.zoom;
+        if (direction === 'in') newZoom += 0.25;
+        else newZoom = Math.max(0.25, newZoom - 0.25);
+        updateState({ ...state, signature: { ...state.signature, zoom: newZoom } });
+        UI.renderPdfPage(state.currentPageNum);
+        History.saveState();
+    },
+
+    handleResize() {
+        if (state.currentPdfPage) UI.renderPdfPage(state.currentPageNum);
+        if (state.signaturePadInstance && UI.elements.signatureModal.style.display === 'flex') UI.initializeSignaturePad();
+    },
+
+    bind() {
+        const { pdfCanvas, prevPageButton, nextPageButton } = UI.elements;
+        const uploadInput = document.getElementById('pdfUpload');
+        const clearSigButton = document.getElementById('clearSigButton');
+        const saveSigButton = document.getElementById('saveSigButton');
+        const cancelSigButton = document.getElementById('cancelSigButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const newSignatureButton = document.getElementById('newSignatureButton');
+        const zoomInButton = document.getElementById('zoomInButton');
+        const zoomOutButton = document.getElementById('zoomOutButton');
+        const undoButton = document.getElementById('pdfUndoButton');
+        const redoButton = document.getElementById('pdfRedoButton');
+        uploadInput.addEventListener('change', this.handleFileUpload.bind(this));
+        pdfCanvas.addEventListener('click', this.handleCanvasClick.bind(this));
+        saveSigButton.addEventListener('click', this.handleSaveSignature.bind(this));
+        downloadButton.addEventListener('click', this.handleDownload.bind(this));
+        clearSigButton.addEventListener('click', () => state.signaturePadInstance.clear());
+        cancelSigButton.addEventListener('click', UI.closeSignatureModal.bind(UI));
+        newSignatureButton.addEventListener('click', UI.openSignatureModal.bind(UI));
+        zoomInButton.addEventListener('click', () => this.handleZoom('in'));
+        zoomOutButton.addEventListener('click', () => this.handleZoom('out'));
+        undoButton.addEventListener('click', History.undo.bind(History));
+        redoButton.addEventListener('click', History.redo.bind(History));
+        prevPageButton.addEventListener('click', () => this.handlePageChange('prev'));
+        nextPageButton.addEventListener('click', () => this.handlePageChange('next'));
+        window.addEventListener('resize', this.handleResize.bind(this));
+    }
 };
 
 // ==================================================================================
 // 6. App Initialization
 // ==================================================================================
-// ... (no changes)
+document.addEventListener('DOMContentLoaded', () => {
+    Events.bind();
+    UI.render();
+});
