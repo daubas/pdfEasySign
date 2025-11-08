@@ -14,11 +14,10 @@ const state = {
     totalPages: 0,
     currentPdfPage: null,
     scale: 1.5,
-    // --- REVERTED: Simplified back to drawings only ---
+    // --- MODIFIED: Removed signatureZoom, zoom is now per-annotation ---
     annotations: [], // Stores all drawing annotations: { id, type: 'drawing', data, placement, zoom, pageNum }
-    signatureZoom: 1.0, // Global zoom for the next signature
     currentAnnotationData: null, // Temp storage for placement data
-    // --- END REVERTED ---
+    // --- END MODIFIED ---
     history: [],
     historyPointer: -1,
     ui: {
@@ -245,13 +244,13 @@ const Events = {
             type: 'drawing',
             data: state.signaturePadInstance.toDataURL('image/png'),
             placement: state.currentAnnotationData.placement,
-            zoom: state.signatureZoom, // Use the global zoom for the new signature
+            zoom: 1.0, // New signatures always start at 1.0x zoom
             pageNum: state.currentAnnotationData.pageNum,
         };
         updateState({
             ...state,
             annotations: [...state.annotations, newAnnotation],
-            ui: { ...state.ui, showDownload: true, message: { text: '簽名已儲存！', type: 'success' } },
+            ui: { ...state.ui, showDownload: true, message: { text: '簽名已儲存！現在您可以使用縮放按鈕調整大小。', type: 'success' } },
         });
         UI.closeSignatureModal();
         UI.renderPdfPage(state.currentPageNum);
@@ -287,18 +286,31 @@ const Events = {
         }
     },
 
-    // --- RE-IMPLEMENTED: handleZoom ---
+    // --- RE-IMPLEMENTED: handleZoom provides immediate feedback ---
     handleZoom(direction) {
-        let newZoom = state.signatureZoom;
+        // Find the last annotation on the current page
+        const lastAnnotationOnPage = [...state.annotations].reverse().find(ann => ann.pageNum === state.currentPageNum);
+
+        if (!lastAnnotationOnPage) {
+            updateState({ ...state, ui: { ...state.ui, message: { text: '請先放置一個簽名再進行縮放。', type: 'error' } } });
+            return;
+        }
+
+        let newZoom = lastAnnotationOnPage.zoom;
         if (direction === 'in') {
             newZoom += 0.25;
         } else {
             newZoom = Math.max(0.25, newZoom - 0.25);
         }
-        // Just update the state, no re-render needed as it affects the *next* signature
-        state.signatureZoom = newZoom;
-        // Optionally, provide feedback to the user
-        updateState({ ...state, ui: { ...state.ui, message: { text: `下一個簽名縮放為: ${newZoom.toFixed(2)}x`, type: 'info' } } });
+
+        // Update the zoom of that specific annotation
+        lastAnnotationOnPage.zoom = newZoom;
+
+        // Re-render the page to show the change immediately
+        UI.renderPdfPage(state.currentPageNum);
+        
+        // Save this change to history
+        History.saveState();
     },
 
     handleResize() {
