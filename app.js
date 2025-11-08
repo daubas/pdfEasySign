@@ -24,7 +24,7 @@ const state = {
     signaturePadInstance: null,
 };
 
-// FIX: Decouple state update from rendering. The function should only update the state.
+// FIX: Re-couple state update with rendering for simplicity and robustness.
 function updateState(newState) {
     // Deep merge for nested objects like ui and signature
     if (newState.ui) {
@@ -34,6 +34,8 @@ function updateState(newState) {
         newState.signature = { ...state.signature, ...newState.signature };
     }
     Object.assign(state, newState);
+    // Every state change automatically triggers a render. This is the single source of truth.
+    UI.render();
 }
 
 // ==================================================================================
@@ -46,7 +48,7 @@ const UI = {
         uploadContainer: document.getElementById('uploadContainer'),
         pdfContainer: document.getElementById('pdfContainer'),
         downloadContainer: document.getElementById('downloadContainer'),
-        instructionsContainer: document.getElementById('instructionsContainer'), // Added
+        instructionsContainer: document.getElementById('instructionsContainer'),
         pdfCanvas: document.getElementById('pdfCanvas'),
         pdfMessage: document.getElementById('pdfMessage'),
         messageArea: document.getElementById('messageArea'),
@@ -78,9 +80,8 @@ const UI = {
     render() {
         // Show/hide main containers based on state
         this.elements.uploadContainer.classList.toggle('hidden', state.ui.currentView !== 'upload');
-        this.elements.instructionsContainer.classList.toggle('hidden', state.ui.currentView !== 'upload'); // Added
+        this.elements.instructionsContainer.classList.toggle('hidden', state.ui.currentView !== 'upload');
         this.elements.pdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
-        
         this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
 
         // Update message area
@@ -98,7 +99,7 @@ const UI = {
         const viewportAtScale1 = state.currentPdfPage.getViewport({ scale: 1 });
         const scale = containerWidth / viewportAtScale1.width;
         
-        // FIX: Update state directly here, but don't call the global render
+        // FIX: Directly mutate state here to avoid render loop. This is a controlled exception.
         state.scale = scale;
 
         const viewport = state.currentPdfPage.getViewport({ scale });
@@ -145,8 +146,8 @@ const UI = {
             backgroundColor: 'rgb(249, 249, 249)',
             penColor: 'rgb(0, 0, 0)',
         });
-        updateState({ signaturePadInstance: signaturePad });
-        // No render needed here as it's just instance creation
+        // No need to call updateState here, as this is a direct instance assignment
+        state.signaturePadInstance = signaturePad;
     },
 
     openSignatureModal() {
@@ -170,7 +171,7 @@ const PDF = {
     async loadPdf(pdfBytes) {
         const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
         const pdfDoc = await loadingTask.promise;
-        const page = await pdfDoc.getPage(1); // Get the first page
+        const page = await pdfDoc.getPage(1);
         updateState({
             originalPdfBytes: pdfBytes,
             pdfDoc: pdfDoc,
@@ -192,7 +193,6 @@ const PDF = {
         const sigImageBytes = await fetch(signature.dataUrl).then(res => res.arrayBuffer());
         const sigImage = await pdfDoc.embedPng(sigImageBytes);
 
-        // Coordinate conversion
         const viewport = currentPdfPage.getViewport({ scale });
         const scaleX = pageWidth / viewport.width;
         const scaleY = pageHeight / viewport.height;
@@ -234,7 +234,6 @@ const History = {
             history: [...newHistory, currentState],
             historyPointer: newHistory.length,
         });
-        UI.render();
     },
 
     undo() {
@@ -245,7 +244,6 @@ const History = {
                 historyPointer: newPointer,
                 signature: { ...state.signature, ...previousState },
             });
-            UI.render();
             UI.renderPdfPage();
         }
     },
@@ -258,7 +256,6 @@ const History = {
                 historyPointer: newPointer,
                 signature: { ...state.signature, ...nextState },
             });
-            UI.render();
             UI.renderPdfPage();
         }
     },
@@ -274,12 +271,10 @@ const Events = {
         const file = e.target.files[0];
         if (!file || file.type !== 'application/pdf') {
             updateState({ ui: { message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
-            UI.render();
             return;
         }
 
         updateState({ ui: { message: { text: '正在載入 PDF...', type: 'loading' }, showDownload: false } });
-        UI.render();
 
         const reader = new FileReader();
         reader.onload = async (event) => {
@@ -288,13 +283,11 @@ const Events = {
                 updateState({
                     ui: { currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
-                UI.render();
                 await UI.renderPdfPage();
                 History.saveState();
             } catch (err) {
                 console.error('載入 PDF 失敗:', err);
                 updateState({ ui: { message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
-                UI.render();
             }
         };
         reader.readAsArrayBuffer(file);
@@ -312,7 +305,6 @@ const Events = {
             UI.openSignatureModal();
         } else {
             updateState({ ui: { message: { text: '簽名位置已更新。', type: 'info' } } });
-            UI.render();
             UI.renderPdfPage();
             History.saveState();
         }
@@ -328,7 +320,6 @@ const Events = {
             signature: { dataUrl },
             ui: { showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
-        UI.render();
         UI.closeSignatureModal();
         UI.renderPdfPage();
         History.saveState();
@@ -336,11 +327,8 @@ const Events = {
 
     async handleDownload() {
         updateState({ ui: { message: { text: '正在處理 PDF...', type: 'loading' } } });
-        UI.render();
         try {
-            // FIX: Ensure scale is up-to-date before embedding
-            await UI.renderPdfPage(); 
-            
+            // The scale is assumed to be correct from the last render/resize.
             const pdfBytes = await PDF.embedSignature();
             let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
             if (!fileName.toLowerCase().endsWith('.pdf')) {
@@ -357,11 +345,9 @@ const Events = {
             URL.revokeObjectURL(link.href);
 
             updateState({ ui: { message: { text: '處理完成！', type: 'success' } } });
-            UI.render();
         } catch (err) {
             console.error('嵌入簽名失敗:', err);
             updateState({ ui: { message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
-            UI.render();
         }
     },
 
@@ -387,7 +373,7 @@ const Events = {
     },
 
     bind() {
-        // Get all interactive elements from the UI module
+        // ... (binding remains the same)
         const { pdfCanvas, signaturePadCanvas } = UI.elements;
         const uploadInput = document.getElementById('pdfUpload');
         const clearSigButton = document.getElementById('clearSigButton');
