@@ -221,8 +221,18 @@ input[type="text"]:focus {
     padding: 1.5rem;
     border: 3px solid #111;
     box-shadow: 0 0 30px #000;
-    width: 90%;
-    max-width: 500px;
+    width: 90vw; /* Full screen width */
+    height: 90vh; /* Full screen height */
+    max-width: none; /* Remove max-width constraint */
+    max-height: none; /* Remove max-height constraint */
+    display: flex; /* Use flex for internal layout */
+    flex-direction: column;
+}
+
+.modal-content canvas {
+    flex-grow: 1; /* Allow canvas to fill available space */
+    width: 100%;
+    height: auto;
 }
 
 /* Loader (System Activation) */
