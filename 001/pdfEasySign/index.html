@@ -58,14 +58,13 @@
 
                 <div class="border-l h-6 mx-3 opacity-30"></div>
 
-                <!-- Page Navigation -->
-                <button id="prevPageButton" disabled>‹ 上一頁</button>
-                <span id="pageIndicator" class="font-medium px-2">頁碼 0 / 0</span>
-                <button id="nextPageButton" disabled>下一頁 ›</button>
-
+                <!-- Annotation Type Selection -->
+                <button id="addDrawingButton" class="btn">手寫簽名</button>
+                <button id="addTextButton" class="btn">文字輸入</button>
+                
                 <div class="border-l h-6 mx-3 opacity-30"></div>
 
-                <button id="newSignatureButton" class="btn">新增/更新簽名</button>
+                <button id="newSignatureButton" class="btn">放置/更新</button>
             </div>
             
             <p id="pdfMessage" class="text-center text-lg font-medium text-indigo-600 mb-4"></p>
@@ -96,6 +95,24 @@
                 <button id="cancelSigButton" class="btn btn-gray">取消</button>
                 <button id="clearSigButton" class="btn">清除</button>
                 <button id="saveSigButton" class="btn btn-primary">儲存簽名</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: 文字輸入 Modal 彈窗 -->
+    <div id="textInputModal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-xl font-semibold mb-4 text-center">輸入文字註釋</h3>
+            <textarea id="textInput" class="w-full p-2 mb-4 bg-gray-800 text-white border border-gray-700 rounded" rows="4" placeholder="在此輸入文字..."></textarea>
+            <div class="flex justify-between items-center mb-4">
+                <label for="fontSizeInput" class="text-sm">字體大小:</label>
+                <input type="number" id="fontSizeInput" value="12" min="8" max="72" class="w-20 p-1 bg-gray-800 text-white border border-gray-700 rounded">
+                <label for="fontColorInput" class="text-sm ml-4">顏色:</label>
+                <input type="color" id="fontColorInput" value="#F0EFE3" class="w-10 h-8 border-none rounded">
+            </div>
+            <div class="flex justify-center gap-2 md:gap-4 mt-4">
+                <button id="cancelTextButton" class="btn btn-gray">取消</button>
+                <button id="saveTextButton" class="btn btn-primary">儲存文字</button>
             </div>
         </div>
     </div>

@@ -1,7 +1,7 @@
 // ==================================================================================
 // 0. Library Globals & Setup
 // ==================================================================================
-const { PDFDocument, rgb } = PDFLib;
+const { PDFDocument, rgb, StandardFonts } = PDFLib; // Added StandardFonts
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
 
 // ==================================================================================
@@ -14,7 +14,11 @@ const state = {
     totalPages: 0,
     currentPdfPage: null,
     scale: 1.5,
-    signature: { dataUrl: null, placement: null, zoom: 1.0 },
+    // --- MODIFIED: Replaced signature with annotations array ---
+    annotations: [], // Stores all annotations: { id, type, data, placement: {x,y}, zoom, pageNum, font, color }
+    currentAnnotationType: 'drawing', // 'drawing' or 'text'
+    currentAnnotationData: null, // Temp storage for drawing dataUrl or text content
+    // --- END MODIFIED ---
     history: [],
     historyPointer: -1,
     ui: {
@@ -24,6 +28,7 @@ const state = {
         message: { text: '', type: 'info' },
     },
     signaturePadInstance: null,
+    textInputModalInstance: null, // For text input modal
 };
 
 function updateState(newState) {
@@ -51,6 +56,16 @@ const UI = {
         prevPageButton: document.getElementById('prevPageButton'),
         nextPageButton: document.getElementById('nextPageButton'),
         pageIndicator: document.getElementById('pageIndicator'),
+        // --- NEW: Text Annotation Modal Elements ---
+        textInputModal: document.getElementById('textInputModal'),
+        textInput: document.getElementById('textInput'),
+        fontSizeInput: document.getElementById('fontSizeInput'),
+        fontColorInput: document.getElementById('fontColorInput'),
+        saveTextButton: document.getElementById('saveTextButton'),
+        cancelTextButton: document.getElementById('cancelTextButton'),
+        // --- NEW: Annotation Type Selection ---
+        addDrawingButton: document.getElementById('addDrawingButton'),
+        addTextButton: document.getElementById('addTextButton'),
     },
 
     showMessage(text, type = 'info') {
@@ -75,6 +90,16 @@ const UI = {
         this.elements.pageIndicator.textContent = `頁碼 ${state.currentPageNum} / ${state.totalPages}`;
         this.elements.prevPageButton.disabled = state.currentPageNum <= 1;
         this.elements.nextPageButton.disabled = state.currentPageNum >= state.totalPages;
+
+        // Update active annotation type button
+        if (this.elements.addDrawingButton) {
+            this.elements.addDrawingButton.classList.toggle('btn-primary', state.currentAnnotationType === 'drawing');
+            this.elements.addDrawingButton.classList.toggle('btn', state.currentAnnotationType !== 'drawing');
+        }
+        if (this.elements.addTextButton) {
+            this.elements.addTextButton.classList.toggle('btn-primary', state.currentAnnotationType === 'text');
+            this.elements.addTextButton.classList.toggle('btn', state.currentAnnotationType !== 'text');
+        }
     },
 
     async renderPdfPage(pageNum) {
@@ -91,25 +116,31 @@ const UI = {
         this.elements.pdfCanvas.width = viewport.width;
         await page.render({ canvasContext: context, viewport }).promise;
         console.log(`Page ${pageNum} rendered.`);
-        if (state.signature.dataUrl && state.signature.placement) {
-            this.drawSignaturePreview();
-        }
+        // --- MODIFIED: Draw all annotations for the current page ---
+        this.drawAnnotationsPreview(pageNum);
+        // --- END MODIFIED ---
     },
 
-    drawSignaturePreview() {
-        const { dataUrl, placement, zoom } = state.signature;
-        if (!dataUrl || !placement) return;
+    // --- MODIFIED: drawAnnotationsPreview now draws all annotations ---
+    drawAnnotationsPreview(pageNum) {
         const context = this.elements.pdfCanvas.getContext('2d');
-        const sigImage = new Image();
-        sigImage.onload = () => {
-            const baseSigWidth = 120;
-            const baseSigHeight = 60;
-            const sigWidth = baseSigWidth * zoom;
-            const sigHeight = baseSigHeight * zoom;
-            context.drawImage(sigImage, placement.x, placement.y, sigWidth, sigHeight);
-        };
-        sigImage.src = dataUrl;
+        state.annotations.filter(ann => ann.pageNum === pageNum).forEach(ann => {
+            if (ann.type === 'drawing') {
+                const sigImage = new Image();
+                sigImage.onload = () => {
+                    const sigWidth = 120 * ann.zoom;
+                    const sigHeight = 60 * ann.zoom;
+                    context.drawImage(sigImage, ann.placement.x, ann.placement.y, sigWidth, sigHeight);
+                };
+                sigImage.src = ann.data;
+            } else if (ann.type === 'text') {
+                context.font = `${ann.font.size * ann.zoom}px ${ann.font.name}`;
+                context.fillStyle = ann.color;
+                context.fillText(ann.data, ann.placement.x, ann.placement.y);
+            }
+        });
     },
+    // --- END MODIFIED ---
 
     initializeSignaturePad() {
         const canvas = this.elements.signaturePadCanvas;
@@ -118,9 +149,12 @@ const UI = {
         canvas.height = canvas.offsetHeight * ratio;
         canvas.getContext("2d").scale(ratio, ratio);
         if (state.signaturePadInstance) state.signaturePadInstance.off();
+        // --- MODIFIED: Ensure transparent background for signature pad ---
         state.signaturePadInstance = new SignaturePad(canvas, {
-            backgroundColor: 'rgb(249, 249, 249)', penColor: 'rgb(0, 0, 0)',
+            backgroundColor: 'rgba(0,0,0,0)', // Transparent background
+            penColor: 'rgb(0, 0, 0)',
         });
+        // --- END MODIFIED ---
     },
     openSignatureModal() {
         this.elements.signatureModal.style.display = 'flex';
@@ -128,6 +162,20 @@ const UI = {
         state.signaturePadInstance.clear();
     },
     closeSignatureModal() { this.elements.signatureModal.style.display = 'none'; },
+
+    // --- NEW: Text Input Modal Functions ---
+    openTextInputModal(placement) {
+        this.elements.textInputModal.style.display = 'flex';
+        this.elements.textInput.value = '';
+        this.elements.fontSizeInput.value = 12; // Default font size
+        this.elements.fontColorInput.value = '#F0EFE3'; // Default font color (羊皮紙白)
+        state.currentAnnotationData = { placement, pageNum: state.currentPageNum }; // Store temp data
+    },
+    closeTextInputModal() {
+        this.elements.textInputModal.style.display = 'none';
+        state.currentAnnotationData = null;
+    },
+    // --- END NEW ---
 };
 
 // ==================================================================================
@@ -139,24 +187,53 @@ const PDF = {
         const pdfDoc = await loadingTask.promise;
         return { pdfDoc, totalPages: pdfDoc.numPages };
     },
-    async embedSignature() {
-        const { originalPdfBytes, signature, currentPageNum, currentPdfPage, scale } = state;
-        if (!originalPdfBytes || !signature.dataUrl || !signature.placement) throw new Error('缺少 PDF、簽名或放置位置的資料。');
+    // --- MODIFIED: embedAnnotations now embeds all annotations ---
+    async embedAnnotations() {
+        const { originalPdfBytes, annotations } = state;
+        if (!originalPdfBytes) throw new Error('缺少原始 PDF 資料。');
         const pdfDoc = await PDFDocument.load(originalPdfBytes);
-        const pageToSign = pdfDoc.getPages()[currentPageNum - 1];
-        const { width: pageWidth, height: pageHeight } = pageToSign.getSize();
-        const sigImageBytes = await fetch(signature.dataUrl).then(res => res.arrayBuffer());
-        const sigImage = await pdfDoc.embedPng(sigImageBytes);
-        const viewport = currentPdfPage.getViewport({ scale });
-        const scaleX = pageWidth / viewport.width;
-        const scaleY = pageHeight / viewport.height;
-        const sigWidthPoints = 120 * signature.zoom;
-        const sigHeightPoints = 60 * signature.zoom;
-        const pdfX = signature.placement.x * scaleX;
-        const pdfY = pageHeight - (signature.placement.y * scaleY) - sigHeightPoints;
-        pageToSign.drawImage(sigImage, { x: pdfX, y: pdfY, width: sigWidthPoints, height: sigHeightPoints });
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica); // Embed a standard font for text
+
+        for (const ann of annotations) {
+            const pageToSign = pdfDoc.getPages()[ann.pageNum - 1];
+            if (!pageToSign) continue; // Skip if page doesn't exist
+
+            const { width: pageWidth, height: pageHeight } = pageToSign.getSize();
+            const viewport = state.pdfDoc.getPage(ann.pageNum).getViewport({ scale: state.scale }); // Get viewport for the specific page
+            const scaleX = pageWidth / viewport.width;
+            const scaleY = pageHeight / viewport.height;
+
+            if (ann.type === 'drawing') {
+                const sigImageBytes = await fetch(ann.data).then(res => res.arrayBuffer());
+                const sigImage = await pdfDoc.embedPng(sigImageBytes);
+                const sigWidthPoints = 120 * ann.zoom;
+                const sigHeightPoints = 60 * ann.zoom;
+                const pdfX = ann.placement.x * scaleX;
+                const pdfY = pageHeight - (ann.placement.y * scaleY) - sigHeightPoints;
+                pageToSign.drawImage(sigImage, { x: pdfX, y: pdfY, width: sigWidthPoints, height: sigHeightPoints });
+            } else if (ann.type === 'text') {
+                const textContent = ann.data;
+                const fontSize = ann.font.size * ann.zoom; // Scale font size
+                const textColor = ann.color ? rgb(
+                    parseInt(ann.color.slice(1, 3), 16) / 255,
+                    parseInt(ann.color.slice(3, 5), 16) / 255,
+                    parseInt(ann.color.slice(5, 7), 16) / 255
+                ) : rgb(0, 0, 0); // Default to black if no color
+                const pdfX = ann.placement.x * scaleX;
+                const pdfY = pageHeight - (ann.placement.y * scaleY) - fontSize; // Text Y is baseline
+
+                pageToSign.drawText(textContent, {
+                    x: pdfX,
+                    y: pdfY,
+                    font: font,
+                    size: fontSize,
+                    color: textColor,
+                });
+            }
+        }
         return await pdfDoc.save();
     },
+    // --- END MODIFIED ---
 };
 
 // ==================================================================================
@@ -165,9 +242,8 @@ const PDF = {
 const History = {
     saveState() {
         const currentState = {
-            placement: state.signature.placement,
-            dataUrl: state.signature.dataUrl,
-            zoom: state.signature.zoom,
+            annotations: JSON.parse(JSON.stringify(state.annotations)), // Deep copy annotations
+            zoom: state.signature.zoom, // Keep signature zoom for now, will be annotation-specific later
             pageNum: state.currentPageNum,
         };
         const newHistory = state.history.slice(0, state.historyPointer + 1);
@@ -179,7 +255,12 @@ const History = {
         if (state.historyPointer > 0) {
             const newPointer = state.historyPointer - 1;
             const previousState = state.history[newPointer];
-            updateState({ ...state, historyPointer: newPointer, currentPageNum: previousState.pageNum, signature: { ...state.signature, ...previousState } });
+            updateState({
+                ...state,
+                historyPointer: newPointer,
+                currentPageNum: previousState.pageNum,
+                annotations: previousState.annotations, // Restore annotations array
+            });
             UI.renderPdfPage(previousState.pageNum);
         }
     },
@@ -187,7 +268,12 @@ const History = {
         if (state.historyPointer < state.history.length - 1) {
             const newPointer = state.historyPointer + 1;
             const nextState = state.history[newPointer];
-            updateState({ ...state, historyPointer: newPointer, currentPageNum: nextState.pageNum, signature: { ...state.signature, ...nextState } });
+            updateState({
+                ...state,
+                historyPointer: newPointer,
+                currentPageNum: nextState.pageNum,
+                annotations: nextState.annotations, // Restore annotations array
+            });
             UI.renderPdfPage(nextState.pageNum);
         }
     },
@@ -220,6 +306,7 @@ const Events = {
                     pdfDoc: pdfData.pdfDoc,
                     totalPages: pdfData.totalPages,
                     currentPageNum: 1,
+                    annotations: [], // Clear annotations on new PDF load
                     ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
                 await UI.renderPdfPage(1);
@@ -236,35 +323,72 @@ const Events = {
         if (!state.currentPdfPage) return;
         const rect = UI.elements.pdfCanvas.getBoundingClientRect();
         const placement = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        if (!state.signature.dataUrl) {
-            state.signature.placement = placement;
+
+        if (state.currentAnnotationType === 'drawing') {
+            state.currentAnnotationData = { placement, pageNum: state.currentPageNum };
             UI.openSignatureModal();
-        } else {
-            updateState({ ...state, signature: { ...state.signature, placement } });
-            UI.renderPdfPage(state.currentPageNum);
-            History.saveState();
+        } else if (state.currentAnnotationType === 'text') {
+            UI.openTextInputModal(placement);
         }
     },
 
-    handleSaveSignature() {
+    // --- MODIFIED: handleSaveDrawing for new annotation structure ---
+    handleSaveDrawing() {
         if (state.signaturePadInstance.isEmpty()) { alert('簽名欄位是空的。'); return; }
         const dataUrl = state.signaturePadInstance.toDataURL('image/png');
+        const newAnnotation = {
+            id: Date.now(), // Unique ID
+            type: 'drawing',
+            data: dataUrl,
+            placement: state.currentAnnotationData.placement,
+            zoom: state.signature.zoom, // Use global signature zoom for now
+            pageNum: state.currentAnnotationData.pageNum,
+        };
         updateState({
             ...state,
-            signature: { ...state.signature, dataUrl },
+            annotations: [...state.annotations, newAnnotation],
             ui: { ...state.ui, showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
         UI.closeSignatureModal();
         UI.renderPdfPage(state.currentPageNum);
         History.saveState();
     },
+    // --- END MODIFIED ---
+
+    // --- NEW: handleSaveText for text annotations ---
+    handleSaveText() {
+        const textContent = UI.elements.textInput.value.trim();
+        if (!textContent) { alert('文字內容不能為空。'); return; }
+        const fontSize = parseInt(UI.elements.fontSizeInput.value, 10);
+        const fontColor = UI.elements.fontColorInput.value;
+
+        const newAnnotation = {
+            id: Date.now(),
+            type: 'text',
+            data: textContent,
+            placement: state.currentAnnotationData.placement,
+            zoom: 1.0, // Text zoom can be separate or fixed
+            pageNum: state.currentAnnotationData.pageNum,
+            font: { name: 'Helvetica', size: fontSize }, // Using Helvetica for now
+            color: fontColor,
+        };
+        updateState({
+            ...state,
+            annotations: [...state.annotations, newAnnotation],
+            ui: { ...state.ui, showDownload: true, message: { text: '文字已儲存！您可以調整位置或下載。', type: 'success' } },
+        });
+        UI.closeTextInputModal();
+        UI.renderPdfPage(state.currentPageNum);
+        History.saveState();
+    },
+    // --- END NEW ---
 
     async handlePageChange(direction) {
         let newPageNum = state.currentPageNum;
         if (direction === 'next' && newPageNum < state.totalPages) newPageNum++;
         else if (direction === 'prev' && newPageNum > 1) newPageNum--;
         if (newPageNum !== state.currentPageNum) {
-            updateState({ ...state, currentPageNum: newPageNum, signature: { ...state.signature, placement: null } });
+            updateState({ ...state, currentPageNum: newPageNum, signature: { ...state.signature, placement: null } }); // Clear placement on page change
             await UI.renderPdfPage(newPageNum);
             History.saveState();
         }
@@ -273,7 +397,7 @@ const Events = {
     async handleDownload() {
         updateState({ ...state, ui: { ...state.ui, message: { text: '正在處理 PDF...', type: 'loading' } } });
         try {
-            const pdfBytes = await PDF.embedSignature();
+            const pdfBytes = await PDF.embedAnnotations(); // --- MODIFIED: Call embedAnnotations ---
             let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
             if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
             const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -292,13 +416,19 @@ const Events = {
     },
 
     handleZoom(direction) {
-        let newZoom = state.signature.zoom;
+        let newZoom = state.signature.zoom; // This zoom will now apply to the *next* annotation
         if (direction === 'in') newZoom += 0.25;
         else newZoom = Math.max(0.25, newZoom - 0.25);
         updateState({ ...state, signature: { ...state.signature, zoom: newZoom } });
-        UI.renderPdfPage(state.currentPageNum);
+        UI.renderPdfPage(state.currentPageNum); // Re-render to show potential new zoom on existing annotations
         History.saveState();
     },
+
+    // --- NEW: handleSetAnnotationType ---
+    handleSetAnnotationType(type) {
+        updateState({ ...state, currentAnnotationType: type, ui: { ...state.ui, message: { text: `已選擇 ${type === 'drawing' ? '手寫簽名' : '文字輸入'}。請點擊 PDF 放置。`, type: 'info' } } });
+    },
+    // --- END NEW ---
 
     handleResize() {
         if (state.currentPdfPage) UI.renderPdfPage(state.currentPageNum);
@@ -309,21 +439,29 @@ const Events = {
         const { pdfCanvas, prevPageButton, nextPageButton } = UI.elements;
         const uploadInput = document.getElementById('pdfUpload');
         const clearSigButton = document.getElementById('clearSigButton');
-        const saveSigButton = document.getElementById('saveSigButton');
+        const saveSigButton = document.getElementById('saveTextButton'); // --- MODIFIED: Bind to saveTextButton ---
         const cancelSigButton = document.getElementById('cancelSigButton');
         const downloadButton = document.getElementById('downloadButton');
-        const newSignatureButton = document.getElementById('newSignatureButton');
+        const newSignatureButton = document.getElementById('newSignatureButton'); // This button will now open drawing modal
         const zoomInButton = document.getElementById('zoomInButton');
         const zoomOutButton = document.getElementById('zoomOutButton');
         const undoButton = document.getElementById('pdfUndoButton');
         const redoButton = document.getElementById('pdfRedoButton');
+        // --- NEW: Text Modal Buttons ---
+        const saveTextButton = UI.elements.saveTextButton;
+        const cancelTextButton = UI.elements.cancelTextButton;
+        // --- NEW: Annotation Type Buttons ---
+        const addDrawingButton = UI.elements.addDrawingButton;
+        const addTextButton = UI.elements.addTextButton;
+
         uploadInput.addEventListener('change', this.handleFileUpload.bind(this));
         pdfCanvas.addEventListener('click', this.handleCanvasClick.bind(this));
-        saveSigButton.addEventListener('click', this.handleSaveSignature.bind(this));
+        // --- MODIFIED: handleSaveDrawing is now called by newSignatureButton ---
+        newSignatureButton.addEventListener('click', () => UI.openSignatureModal()); // This button now just opens the drawing modal
+        saveSigButton.addEventListener('click', this.handleSaveDrawing.bind(this)); // --- MODIFIED: This is now saveDrawing ---
         downloadButton.addEventListener('click', this.handleDownload.bind(this));
         clearSigButton.addEventListener('click', () => state.signaturePadInstance.clear());
         cancelSigButton.addEventListener('click', UI.closeSignatureModal.bind(UI));
-        newSignatureButton.addEventListener('click', UI.openSignatureModal.bind(UI));
         zoomInButton.addEventListener('click', () => this.handleZoom('in'));
         zoomOutButton.addEventListener('click', () => this.handleZoom('out'));
         undoButton.addEventListener('click', History.undo.bind(History));
@@ -331,6 +469,13 @@ const Events = {
         prevPageButton.addEventListener('click', () => this.handlePageChange('prev'));
         nextPageButton.addEventListener('click', () => this.handlePageChange('next'));
         window.addEventListener('resize', this.handleResize.bind(this));
+
+        // --- NEW: Bind Text Modal Buttons ---
+        saveTextButton.addEventListener('click', this.handleSaveText.bind(this));
+        cancelTextButton.addEventListener('click', UI.closeTextInputModal.bind(UI));
+        // --- NEW: Bind Annotation Type Buttons ---
+        addDrawingButton.addEventListener('click', () => this.handleSetAnnotationType('drawing'));
+        addTextButton.addEventListener('click', () => this.handleSetAnnotationType('text'));
     }
 };
 
