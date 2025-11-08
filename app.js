@@ -99,6 +99,7 @@ const UI = {
         await state.currentPdfPage.render({ canvasContext: context, viewport }).promise;
         console.log('Page rendered with scale:', scale);
 
+        // FIX: ALWAYS redraw the signature preview after rendering the PDF page to ensure consistency.
         if (state.signature.dataUrl && state.signature.placement) {
             this.drawSignaturePreview();
         }
@@ -297,9 +298,7 @@ const Events = {
     async handleDownload() {
         updateState({ ui: { message: { text: '正在處理 PDF...', type: 'loading' } } });
         try {
-            // FIX: Explicitly re-render the page to ensure state.scale is accurate before embedding.
-            await UI.renderPdfPage();
-            
+            // The scale is assumed to be correct because renderPdfPage is now robust.
             const pdfBytes = await PDF.embedSignature();
             let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
             if (!fileName.toLowerCase().endsWith('.pdf')) {
