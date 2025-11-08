@@ -14,10 +14,9 @@ const state = {
     totalPages: 0,
     currentPdfPage: null,
     scale: 1.5,
-    // --- MODIFIED: Removed signatureZoom, zoom is now per-annotation ---
-    annotations: [], // Stores all drawing annotations: { id, type: 'drawing', data, placement, zoom, pageNum }
+    annotations: [], // { id, type, data, placement, zoom, pageNum }
+    selectedAnnotationId: null,
     currentAnnotationData: null, // Temp storage for placement data
-    // --- END MODIFIED ---
     history: [],
     historyPointer: -1,
     ui: {
@@ -53,9 +52,9 @@ const UI = {
         prevPageButton: document.getElementById('prevPageButton'),
         nextPageButton: document.getElementById('nextPageButton'),
         pageIndicator: document.getElementById('pageIndicator'),
-        // --- RE-ADDED: Zoom controls ---
         zoomInButton: document.getElementById('zoomInButton'),
         zoomOutButton: document.getElementById('zoomOutButton'),
+        confirmPositionButton: document.getElementById('confirmPositionButton'),
     },
 
     showMessage(text, type = 'info') {
@@ -80,6 +79,7 @@ const UI = {
         this.elements.pageIndicator.textContent = `頁碼 ${state.currentPageNum} / ${state.totalPages}`;
         this.elements.prevPageButton.disabled = state.currentPageNum <= 1;
         this.elements.nextPageButton.disabled = state.currentPageNum >= state.totalPages;
+        this.elements.confirmPositionButton.disabled = state.selectedAnnotationId === null;
     },
 
     async renderPdfPage(pageNum) {
@@ -101,7 +101,17 @@ const UI = {
         state.annotations.filter(ann => ann.pageNum === pageNum).forEach(ann => {
             const sigImage = new Image();
             sigImage.onload = () => {
-                context.drawImage(sigImage, ann.placement.x, ann.placement.y, 120 * ann.zoom, 60 * ann.zoom);
+                const width = 120 * ann.zoom;
+                const height = 60 * ann.zoom;
+                context.drawImage(sigImage, ann.placement.x, ann.placement.y, width, height);
+
+                if (ann.id === state.selectedAnnotationId) {
+                    context.strokeStyle = 'rgba(0, 123, 255, 0.9)';
+                    context.lineWidth = 2;
+                    context.setLineDash([5, 5]);
+                    context.strokeRect(ann.placement.x - 5, ann.placement.y - 5, width + 10, height + 10);
+                    context.setLineDash([]);
+                }
             };
             sigImage.src = ann.data;
         });
@@ -217,6 +227,7 @@ const Events = {
                     totalPages: pdfDoc.numPages,
                     currentPageNum: 1,
                     annotations: [],
+                    selectedAnnotationId: null,
                     ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF 載入成功！請點擊 PDF 放置簽名。', type: 'info' } },
                 });
                 await UI.renderPdfPage(1);
@@ -229,12 +240,56 @@ const Events = {
         reader.readAsArrayBuffer(file);
     },
 
+    findAnnotationAt(x, y) {
+        const currentPageAnnotations = state.annotations.filter(ann => ann.pageNum === state.currentPageNum);
+        for (const ann of [...currentPageAnnotations].reverse()) {
+            const width = 120 * ann.zoom;
+            const height = 60 * ann.zoom;
+            if (x >= ann.placement.x && x <= ann.placement.x + width &&
+                y >= ann.placement.y && y <= ann.placement.y + height) {
+                return ann;
+            }
+        }
+        return null;
+    },
+
     handleCanvasClick(e) {
         if (!state.currentPdfPage) return;
         const rect = UI.elements.pdfCanvas.getBoundingClientRect();
-        const placement = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        state.currentAnnotationData = { placement, pageNum: state.currentPageNum };
-        UI.openSignatureModal();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const clickedAnnotation = this.findAnnotationAt(x, y);
+
+        if (clickedAnnotation) {
+            // Case 1: Clicked on an existing annotation. Select it.
+            updateState({
+                ...state,
+                selectedAnnotationId: clickedAnnotation.id,
+                ui: { ...state.ui, message: { text: '已選取簽名。請點擊新位置來移動，或點擊「確認位置」。', type: 'info' } }
+            });
+            UI.renderPdfPage(state.currentPageNum);
+            return;
+        }
+
+        // Case 2: Clicked on the background.
+        if (state.selectedAnnotationId) {
+            // If an annotation is selected, move it to the new click position.
+            const selectedAnnotation = state.annotations.find(a => a.id === state.selectedAnnotationId);
+            if (selectedAnnotation) {
+                const width = 120 * selectedAnnotation.zoom;
+                const height = 60 * selectedAnnotation.zoom;
+                selectedAnnotation.placement.x = x - width / 2;
+                selectedAnnotation.placement.y = y - height / 2;
+                
+                UI.renderPdfPage(state.currentPageNum);
+                History.saveState();
+            }
+        } else {
+            // If nothing is selected, create a new signature.
+            state.currentAnnotationData = { placement: { x, y }, pageNum: state.currentPageNum };
+            UI.openSignatureModal();
+        }
     },
 
     handleSaveDrawing() {
@@ -244,13 +299,14 @@ const Events = {
             type: 'drawing',
             data: state.signaturePadInstance.toDataURL('image/png'),
             placement: state.currentAnnotationData.placement,
-            zoom: 1.0, // New signatures always start at 1.0x zoom
+            zoom: 1.0,
             pageNum: state.currentAnnotationData.pageNum,
         };
         updateState({
             ...state,
             annotations: [...state.annotations, newAnnotation],
-            ui: { ...state.ui, showDownload: true, message: { text: '簽名已儲存！現在您可以使用縮放按鈕調整大小。', type: 'success' } },
+            selectedAnnotationId: newAnnotation.id,
+            ui: { ...state.ui, showDownload: true, message: { text: '簽名已放置，請調整位置或點擊「確認位置」。', type: 'info' } },
         });
         UI.closeSignatureModal();
         UI.renderPdfPage(state.currentPageNum);
@@ -262,7 +318,7 @@ const Events = {
         if (direction === 'next' && newPageNum < state.totalPages) newPageNum++;
         else if (direction === 'prev' && newPageNum > 1) newPageNum--;
         if (newPageNum !== state.currentPageNum) {
-            updateState({ ...state, currentPageNum: newPageNum });
+            updateState({ ...state, currentPageNum: newPageNum, selectedAnnotationId: null });
             await UI.renderPdfPage(newPageNum);
         }
     },
@@ -286,31 +342,33 @@ const Events = {
         }
     },
 
-    // --- RE-IMPLEMENTED: handleZoom provides immediate feedback ---
     handleZoom(direction) {
-        // Find the last annotation on the current page
-        const lastAnnotationOnPage = [...state.annotations].reverse().find(ann => ann.pageNum === state.currentPageNum);
-
-        if (!lastAnnotationOnPage) {
-            updateState({ ...state, ui: { ...state.ui, message: { text: '請先放置一個簽名再進行縮放。', type: 'error' } } });
+        if (!state.selectedAnnotationId) {
+            updateState({ ...state, ui: { ...state.ui, message: { text: '請先點擊一個簽名以將其選取。', type: 'error' } } });
             return;
         }
+        const selectedAnnotation = state.annotations.find(a => a.id === state.selectedAnnotationId);
+        if (!selectedAnnotation) return;
 
-        let newZoom = lastAnnotationOnPage.zoom;
+        let newZoom = selectedAnnotation.zoom;
         if (direction === 'in') {
             newZoom += 0.25;
         } else {
             newZoom = Math.max(0.25, newZoom - 0.25);
         }
+        selectedAnnotation.zoom = newZoom;
 
-        // Update the zoom of that specific annotation
-        lastAnnotationOnPage.zoom = newZoom;
-
-        // Re-render the page to show the change immediately
         UI.renderPdfPage(state.currentPageNum);
-        
-        // Save this change to history
         History.saveState();
+    },
+
+    handleConfirmPosition() {
+        updateState({
+            ...state,
+            selectedAnnotationId: null,
+            ui: { ...state.ui, message: { text: '位置已確認。請點擊空白處放置新簽名。', type: 'success' } }
+        });
+        UI.renderPdfPage(state.currentPageNum);
     },
 
     handleResize() {
@@ -319,7 +377,7 @@ const Events = {
     },
 
     bind() {
-        const { pdfCanvas, prevPageButton, nextPageButton, zoomInButton, zoomOutButton } = UI.elements;
+        const { pdfCanvas, prevPageButton, nextPageButton, zoomInButton, zoomOutButton, confirmPositionButton } = UI.elements;
         const uploadInput = document.getElementById('pdfUpload');
         const downloadButton = document.getElementById('downloadButton');
         const undoButton = document.getElementById('pdfUndoButton');
@@ -337,6 +395,7 @@ const Events = {
         nextPageButton.addEventListener('click', () => this.handlePageChange('next'));
         zoomInButton.addEventListener('click', () => this.handleZoom('in'));
         zoomOutButton.addEventListener('click', () => this.handleZoom('out'));
+        confirmPositionButton.addEventListener('click', this.handleConfirmPosition.bind(this));
         
         clearSigButton.addEventListener('click', () => state.signaturePadInstance.clear());
         saveSigButton.addEventListener('click', this.handleSaveDrawing.bind(this));
