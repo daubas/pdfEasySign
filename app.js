@@ -275,6 +275,9 @@ const Events = {
                 updateState({
                     ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF loaded successfully! Click on the preview to place your signature.', type: 'info' } },
                 });
+                // First, render the UI to make the container visible
+                UI.render();
+                // Now that the container is visible, render the PDF page
                 await UI.renderPdfPage();
                 History.saveState(); // Save the initial blank state
             } catch (err) {
