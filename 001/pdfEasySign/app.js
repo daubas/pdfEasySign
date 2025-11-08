@@ -423,8 +423,6 @@ const Events = {
         const { pdfCanvas, prevPageButton, nextPageButton, zoomInButton, zoomOutButton, confirmPositionButton, pdfZoomInButton, pdfZoomOutButton, pdfZoomReset } = UI.elements;
         const uploadInput = document.getElementById('pdfUpload');
         const downloadButton = document.getElementById('downloadButton');
-        const undoButton = document.getElementById('pdfUndoButton');
-        const redoButton = document.getElementById('pdfRedoButton');
         const clearSigButton = document.getElementById('clearSigButton');
         const saveSigButton = document.getElementById('saveSigButton');
         const cancelSigButton = document.getElementById('cancelSigButton');
@@ -432,8 +430,6 @@ const Events = {
         uploadInput.addEventListener('change', this.handleFileUpload.bind(this));
         pdfCanvas.addEventListener('click', this.handleCanvasClick.bind(this));
         downloadButton.addEventListener('click', this.handleDownload.bind(this));
-        undoButton.addEventListener('click', History.undo.bind(History));
-        redoButton.addEventListener('click', History.redo.bind(History));
         prevPageButton.addEventListener('click', () => this.handlePageChange('prev'));
         nextPageButton.addEventListener('click', () => this.handlePageChange('next'));
         zoomInButton.addEventListener('click', () => this.handleZoom('in'));
