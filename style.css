@@ -1,0 +1,47 @@
+/* 自訂樣式 */
+body {
+    font-family: 'Inter', 'Noto Sans TC', sans-serif;
+    background-color: #f4f7f6;
+}
+/* PDF 畫布的游標 */
+#pdfCanvas {
+    cursor: crosshair;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+/* 簽名板 modal */
+#signatureModal {
+    display: none; /* 預設隱藏 */
+    position: fixed;
+    z-index: 50;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.6);
+    /* 彈性置中 */
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+#signaturePad {
+    border: 1px dashed #aaa;
+    border-radius: 0.5rem;
+    background-color: #f9f9f9; /* 更改背景色以突顯簽名區 */
+}
+/* 簡單的載入動畫 */
+.loader {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #3498db;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
