@@ -46,29 +46,24 @@
         <!-- 步驟二：簽名 (PDF 預覽) -->
         <div id="pdfContainer" class="hidden my-4">
             <div id="zoomControls" class="sticky top-0 z-10">
-                <button id="zoomOutButton" title="縮小簽名">-</button>
-                <span class="font-medium px-2">簽名縮放</span>
-                <button id="zoomInButton" title="放大簽名">+</button>
-                
+                <!-- Annotation Type -->
+                <button id="addDrawingButton" class="btn">手寫簽名</button>
+                <button id="addTextButton" class="btn">文字輸入</button>
                 <div class="border-l h-6 mx-3 opacity-30"></div>
-
+                
+                <!-- History -->
                 <button id="pdfUndoButton" disabled>上一步</button>
                 <span class="font-medium px-2">操作歷史</span>
                 <button id="pdfRedoButton" disabled>下一步</button>
-
                 <div class="border-l h-6 mx-3 opacity-30"></div>
 
-                <!-- Annotation Type Selection -->
-                <button id="addDrawingButton" class="btn">手寫簽名</button>
-                <button id="addTextButton" class="btn">文字輸入</button>
-                
-                <div class="border-l h-6 mx-3 opacity-30"></div>
-
-                <button id="newSignatureButton" class="btn">放置/更新</button>
+                <!-- Page Navigation -->
+                <button id="prevPageButton" disabled>‹ 上一頁</button>
+                <span id="pageIndicator" class="font-medium px-2">頁碼 0 / 0</span>
+                <button id="nextPageButton" disabled>下一頁 ›</button>
             </div>
             
-            <p id="pdfMessage" class="text-center text-lg font-medium text-indigo-600 mb-4"></p>
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto mt-4">
                 <canvas id="pdfCanvas"></canvas>
             </div>
         </div>
@@ -87,7 +82,7 @@
     </div>
 
     <!-- 簽名 Modal 彈窗 -->
-    <div id="signatureModal">
+    <div id="signatureModal" style="display: none;">
         <div class="modal-content">
             <h3 class="text-xl font-semibold mb-4 text-center">請在此處簽名授權</h3>
             <canvas id="signaturePad" class="mx-auto w-full h-64"></canvas>
@@ -100,15 +95,15 @@
     </div>
 
     <!-- NEW: 文字輸入 Modal 彈窗 -->
-    <div id="textInputModal" class="modal">
+    <div id="textInputModal" style="display: none;">
         <div class="modal-content">
             <h3 class="text-xl font-semibold mb-4 text-center">輸入文字註釋</h3>
             <textarea id="textInput" class="w-full p-2 mb-4 bg-gray-800 text-white border border-gray-700 rounded" rows="4" placeholder="在此輸入文字..."></textarea>
             <div class="flex justify-between items-center mb-4">
                 <label for="fontSizeInput" class="text-sm">字體大小:</label>
-                <input type="number" id="fontSizeInput" value="12" min="8" max="72" class="w-20 p-1 bg-gray-800 text-white border border-gray-700 rounded">
+                <input type="number" id="fontSizeInput" value="16" min="8" max="72" class="w-20 p-1 bg-gray-800 text-white border border-gray-700 rounded">
                 <label for="fontColorInput" class="text-sm ml-4">顏色:</label>
-                <input type="color" id="fontColorInput" value="#F0EFE3" class="w-10 h-8 border-none rounded">
+                <input type="color" id="fontColorInput" value="#000000" class="w-10 h-8 border-none rounded bg-transparent">
             </div>
             <div class="flex justify-center gap-2 md:gap-4 mt-4">
                 <button id="cancelTextButton" class="btn btn-gray">取消</button>
