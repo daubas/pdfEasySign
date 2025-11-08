@@ -164,6 +164,20 @@ input[type="text"]:focus {
     cursor: not-allowed;
 }
 
+/* Message Area & PDF Message */
+#pdfMessage, #messageArea p, #messageArea div {
+    text-shadow: 1px 1px 3px #000;
+    color: var(--color-text);
+}
+
+#messageArea .text-green-600 {
+    color: #67C5A7 !important; /* Brighter green for dark bg */
+}
+
+#messageArea .text-red-600 {
+    color: #E57373 !important; /* Brighter red for dark bg */
+}
+
 /* PDF Canvas & Signature Pad */
 #pdfCanvas {
     cursor: crosshair;
