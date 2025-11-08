@@ -11,32 +11,32 @@
     <!-- 載入 pdf-lib.js (修改 PDF) -->
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
     <!-- 載入 signature_pad.js (簽名版) - 更換為 UMD 版本 -->
-        <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
-        <link rel="stylesheet" href="style.css">
-        <!-- Google Fonts -->
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-            <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
-        </head>
-<body class="p-4 md:p-8">
-    <div id="starfield"></div>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <!-- Adobe Fonts for Trajan Pro (example) & Google Fonts for Roboto -->
+    <link rel="stylesheet" href="https://use.typekit.net/af/trajan-pro-3/p.css?k=jkn5pzv&s=1&f=1&a=1&js=1&app=typekit&e=css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
     <div class="citadel-container">
         <h1 class="text-3xl font-bold text-center mb-6">
-            PDF Easy Sign 服務
+            帝國簽署儀式
         </h1>
         
         <!-- How to Use Section -->
         <div id="instructionsContainer" class="text-center">
             <ul class="instructions-list">
-                <li><strong>步驟一：</strong>點擊下方按鈕上傳您的 PDF 文件。</li>
-                <li><strong>步驟二：</strong>點擊文件預覽圖您想簽名的位置，並在彈出視窗中簽名。</li>
-                <li><strong>步驟三：</strong>調整簽名位置與大小後，點擊下載按鈕即可儲存。</li>
+                <li><strong>第一條令：</strong>上傳神聖的 PDF 文件。</li>
+                <li><strong>第二條令：</strong>在文件上指定簽署位置，並在彈出的紀錄儀上完成你的印記。</li>
+                <li><strong>第三條令：</strong>確認無誤後，下載蓋有印記的已認證文件。</li>
             </ul>
         </div>
 
         <!-- 步驟一：上傳 -->
         <div id="uploadContainer" class="text-center">
-            <label for="pdfUpload" class="mb-2">選擇要簽署的文件</label>
+            <label for="pdfUpload" class="mb-2">選擇文件</label>
             <input type="file" id="pdfUpload" accept="application/pdf" class="block w-full max-w-md mx-auto">
         </div>
 
@@ -45,20 +45,20 @@
 
         <!-- 步驟二：簽名 (PDF 預覽) -->
         <div id="pdfContainer" class="hidden my-4">
-            <div id="zoomControls" class="sticky top-0 z-10 flex justify-center items-center gap-2 mb-4 flex-wrap">
-                <button id="zoomOutButton" class="p-2 rounded-full">-</button>
-                <span class="font-medium px-2">簽名縮放</span>
-                <button id="zoomInButton" class="p-2 rounded-full">+</button>
+            <div id="zoomControls" class="sticky top-0 z-10">
+                <button id="zoomOutButton" title="縮小印記">-</button>
+                <span class="font-medium px-2">印記尺寸</span>
+                <button id="zoomInButton" title="放大印記">+</button>
                 
                 <div class="border-l h-6 mx-3 opacity-30"></div>
 
-                <button id="pdfUndoButton" class="p-2 rounded-full" disabled>上一步</button>
-                <span class="font-medium px-2">操作歷史</span>
-                <button id="pdfRedoButton" class="p-2 rounded-full" disabled>下一步</button>
+                <button id="pdfUndoButton" disabled>撤銷</button>
+                <span class="font-medium px-2">時間線</span>
+                <button id="pdfRedoButton" disabled>重做</button>
 
                 <div class="border-l h-6 mx-3 opacity-30"></div>
 
-                <button id="newSignatureButton" class="btn">新增/更新簽名</button>
+                <button id="newSignatureButton" class="btn">更新印記</button>
             </div>
             
             <p id="pdfMessage" class="text-center text-lg font-medium text-indigo-600 mb-4"></p>
@@ -70,12 +70,12 @@
         <!-- 步驟三：下載 -->
         <div id="downloadContainer" class="text-center hidden mt-6">
             <div class="mb-4 max-w-md mx-auto">
-                <label for="fileName" class="block text-sm mb-1 text-left">下載檔名</label>
-                <input type="text" id="fileName" value="已簽署文件" placeholder="例如：我的已簽署PDF">
+                <label for="fileName" class="block text-sm mb-1 text-left">文件命名</label>
+                <input type="text" id="fileName" value="已認證文件" placeholder="例如：忠誠紀錄_01">
             </div>
 
             <button id="downloadButton" class="btn btn-primary w-full max-w-md mx-auto">
-                下載已簽署的 PDF
+                下載已認證文件
             </button>
         </div>
     </div>
@@ -83,12 +83,12 @@
     <!-- 簽名 Modal 彈窗 -->
     <div id="signatureModal">
         <div class="modal-content">
-            <h3 class="text-xl font-semibold mb-4 text-center">請在此處簽名授權</h3>
+            <h3 class="text-xl font-semibold mb-4 text-center">在紀錄儀上留下你的印記</h3>
             <canvas id="signaturePad" class="mx-auto w-full h-64"></canvas>
             <div class="flex justify-center gap-2 md:gap-4 mt-4">
                 <button id="cancelSigButton" class="btn btn-gray">取消</button>
                 <button id="clearSigButton" class="btn">清除</button>
-                <button id="saveSigButton" class="btn btn-primary">儲存簽名</button>
+                <button id="saveSigButton" class="btn btn-primary">確認印記</button>
             </div>
         </div>
     </div>
