@@ -20,7 +20,7 @@ body {
     font-family: var(--font-body);
     background-color: var(--color-base);
     color: var(--color-text);
-    overflow: hidden; /* 隱藏滾動條，讓星空背景填滿 */
+    /* overflow: hidden; REMOVED to allow scrolling */
 }
 
 /* --------------------------------------------------------------------------
@@ -64,7 +64,9 @@ body {
    3. Main Structure & Layout (The Citadel Hull)
    -------------------------------------------------------------------------- */
 .citadel-container {
-    max-width: 5xl;
+    max-width: 90vw; /* Use viewport width for better responsiveness */
+    max-height: 90vh; /* Use viewport height */
+    overflow-y: auto; /* Add scrollbar to the container if content overflows */
     margin: auto;
     background-color: rgba(22, 27, 34, 0.85); /* 半透明結構色 */
     backdrop-filter: blur(10px); /* 玻璃擬態效果 */
@@ -72,8 +74,12 @@ body {
     border-radius: 0.75rem; /* 12px */
     box-shadow: 0 0 25px rgba(0, 255, 255, 0.1); /* 能量光暈 */
     padding: 2.5rem; /* 40px */
-    position: relative;
     z-index: 1;
+    /* Center the container in the viewport */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 
 h1, h3 {
