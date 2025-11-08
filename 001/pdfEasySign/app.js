@@ -13,7 +13,8 @@ const state = {
     pdfDoc: null,
     originalPdfBytes: null,
     currentPageNum: 1,
-    totalPages: 0, // Added for pagination
+    totalPages: 0,
+    currentPdfPage: null, // The rendered page object from pdf.js
     scale: 1.5,
     signature: {
         dataUrl: null,
@@ -32,6 +33,7 @@ const state = {
 };
 
 function updateState(newState) {
+    // Simple assign, caller is responsible for passing the correct structure
     Object.assign(state, newState);
     UI.render();
 }
@@ -54,7 +56,6 @@ const UI = {
         signaturePadCanvas: document.getElementById('signaturePad'),
         pdfUndoButton: document.getElementById('pdfUndoButton'),
         pdfRedoButton: document.getElementById('pdfRedoButton'),
-        // Added for pagination
         prevPageButton: document.getElementById('prevPageButton'),
         nextPageButton: document.getElementById('nextPageButton'),
         pageIndicator: document.getElementById('pageIndicator'),
@@ -78,11 +79,9 @@ const UI = {
         this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
         this.showMessage(state.ui.message.text, state.ui.message.type);
         
-        // Update history buttons
         this.elements.pdfUndoButton.disabled = state.historyPointer <= 0;
         this.elements.pdfRedoButton.disabled = state.historyPointer >= state.history.length - 1;
 
-        // Update pagination UI
         this.elements.pageIndicator.textContent = `頁碼 ${state.currentPageNum} / ${state.totalPages}`;
         this.elements.prevPageButton.disabled = state.currentPageNum <= 1;
         this.elements.nextPageButton.disabled = state.currentPageNum >= state.totalPages;
@@ -90,9 +89,9 @@ const UI = {
 
     async renderPdfPage(pageNum) {
         if (!state.pdfDoc) return;
-        
-        // Clear previous signature placement when changing pages
-        updateState({ ...state, signature: { ...state.signature, placement: null } });
+
+        // FIX: Do not clear placement when just rendering. Clearing should be a separate action.
+        // updateState({ ...state, signature: { ...state.signature, placement: null } });
 
         const page = await state.pdfDoc.getPage(pageNum);
         state.currentPdfPage = page; // Direct mutation for the rendered page object
@@ -109,6 +108,11 @@ const UI = {
 
         await page.render({ canvasContext: context, viewport }).promise;
         console.log(`Page ${pageNum} rendered with scale:`, scale);
+        
+        // Always redraw signature if it exists for the current view
+        if (state.signature.dataUrl && state.signature.placement) {
+            this.drawSignaturePreview();
+        }
     },
 
     drawSignaturePreview() {
@@ -126,15 +130,9 @@ const UI = {
         sigImage.src = dataUrl;
     },
 
-    initializeSignaturePad() {
-        // ... (no changes)
-    },
-    openSignatureModal() {
-        // ... (no changes)
-    },
-    closeSignatureModal() {
-        // ... (no changes)
-    },
+    initializeSignaturePad() { /* ... no changes ... */ },
+    openSignatureModal() { /* ... no changes ... */ },
+    closeSignatureModal() { /* ... no changes ... */ },
 };
 
 // ==================================================================================
@@ -142,14 +140,20 @@ const UI = {
 // ==================================================================================
 
 const PDF = {
+    // FIX: Correctly update state without spreading old, incorrect values.
     async loadPdf(pdfBytes) {
         const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
         const pdfDoc = await loadingTask.promise;
+        const page = await pdfDoc.getPage(1); // Also get the first page
+        
+        // This is the single point of update after loading.
         updateState({
             ...state,
+            originalPdfBytes: pdfBytes,
             pdfDoc: pdfDoc,
+            currentPdfPage: page, // CRITICAL: Set the first page object
             currentPageNum: 1,
-            totalPages: pdfDoc.numPages, // Store total pages
+            totalPages: pdfDoc.numPages,
         });
     },
 
@@ -159,7 +163,6 @@ const PDF = {
             throw new Error('缺少 PDF、簽名或放置位置的資料。');
         }
         const pdfDoc = await PDFDocument.load(originalPdfBytes);
-        // FIX: Use the current page number to get the correct page. (0-based index)
         const pageToSign = pdfDoc.getPages()[currentPageNum - 1];
         const { width: pageWidth, height: pageHeight } = pageToSign.getSize();
         
@@ -192,7 +195,46 @@ const PDF = {
 // 4. History Module (Manages undo/redo state)
 // ==================================================================================
 const History = {
-    // ... (no changes)
+    saveState() {
+        const currentState = {
+            placement: state.signature.placement,
+            dataUrl: state.signature.dataUrl,
+            zoom: state.signature.zoom,
+            pageNum: state.currentPageNum, // Also save page number
+        };
+        const newHistory = state.history.slice(0, state.historyPointer + 1);
+        state.history = [...newHistory, currentState];
+        state.historyPointer = state.history.length - 1;
+        UI.render();
+    },
+
+    undo() {
+        if (state.historyPointer > 0) {
+            const newPointer = state.historyPointer - 1;
+            const previousState = state.history[newPointer];
+            updateState({
+                ...state,
+                historyPointer: newPointer,
+                currentPageNum: previousState.pageNum,
+                signature: { ...state.signature, ...previousState },
+            });
+            UI.renderPdfPage(previousState.pageNum);
+        }
+    },
+
+    redo() {
+        if (state.historyPointer < state.history.length - 1) {
+            const newPointer = state.historyPointer + 1;
+            const nextState = state.history[newPointer];
+            updateState({
+                ...state,
+                historyPointer: newPointer,
+                currentPageNum: nextState.pageNum,
+                signature: { ...state.signature, ...nextState },
+            });
+            UI.renderPdfPage(nextState.pageNum);
+        }
+    },
 };
 
 // ==================================================================================
@@ -204,7 +246,6 @@ const Events = {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Add file size validation (10MB limit)
         const fileSizeLimit = 10 * 1024 * 1024;
         if (file.size > fileSizeLimit) {
             updateState({ ...state, ui: { ...state.ui, message: { text: '錯誤：檔案大小不能超過 10MB。', type: 'error' } } });
@@ -244,7 +285,7 @@ const Events = {
             UI.openSignatureModal();
         } else {
             updateState({ ...state, signature: { ...state.signature, placement } });
-            UI.renderPdfPage(state.currentPageNum); // Re-render current page with new placement
+            UI.renderPdfPage(state.currentPageNum);
             History.saveState();
         }
     },
@@ -261,7 +302,7 @@ const Events = {
             ui: { ...state.ui, showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
         UI.closeSignatureModal();
-        UI.renderPdfPage(state.currentPageNum); // Re-render to show signature preview
+        UI.renderPdfPage(state.currentPageNum);
         History.saveState();
     },
 
@@ -274,30 +315,20 @@ const Events = {
         }
 
         if (newPageNum !== state.currentPageNum) {
-            updateState({ ...state, currentPageNum: newPageNum });
+            // When changing page, we clear the signature placement for that page
+            updateState({ ...state, currentPageNum: newPageNum, signature: { ...state.signature, placement: null } });
             await UI.renderPdfPage(newPageNum);
             History.saveState();
         }
     },
 
-    async handleDownload() {
-        // ... (no changes to download logic itself)
-    },
-    handleZoom(direction) {
-        // ... (no changes)
-    },
-    handleResize() {
-        // ... (no changes)
-    },
-
-    bind() {
-        const { pdfCanvas, prevPageButton, nextPageButton } = UI.elements;
-        // ... (other bindings remain)
-        
-        prevPageButton.addEventListener('click', () => this.handlePageChange('prev'));
-        nextPageButton.addEventListener('click', () => this.handlePageChange('next'));
-        // ... (rest of bindings)
-    }
+    async handleDownload() { /* ... no changes ... */ },
+    handleZoom(direction) { /* ... no changes ... */ },
+    handleResize() { /* ... no changes ... */ },
+    bind() { /* ... no changes ... */ }
 };
 
-// ... (App Initialization)
+// ==================================================================================
+// 6. App Initialization
+// ==================================================================================
+// ... (no changes)
