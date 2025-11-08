@@ -24,7 +24,6 @@ const state = {
     signaturePadInstance: null,
 };
 
-// FIX: Simplify updateState. The caller is responsible for providing the complete nested object.
 function updateState(newState) {
     Object.assign(state, newState);
     UI.render();
@@ -64,7 +63,8 @@ const UI = {
                 success: 'text-green-600',
                 info: 'text-gray-600',
             }[type];
-            messageArea.innerHTML = `<p class="${color} font-medium">${text}</p>`;
+            // Allow HTML in messages for debugging
+            messageArea.innerHTML = `<div class="${color} font-medium">${text}</div>`;
         }
     },
 
@@ -162,7 +162,7 @@ const PDF = {
     async embedSignature() {
         const { originalPdfBytes, signature, currentPdfPage, scale } = state;
         if (!originalPdfBytes || !signature.dataUrl || !signature.placement) {
-            throw new Error('Missing PDF, signature, or placement data.');
+            throw new Error('缺少 PDF、簽名或放置位置的資料。');
         }
         const pdfDoc = await PDFDocument.load(originalPdfBytes);
         const firstPage = pdfDoc.getPages()[0];
@@ -193,7 +193,6 @@ const PDF = {
 // ==================================================================================
 
 const History = {
-    // FIX: This function should ONLY manage history state. It should NOT trigger a re-render.
     saveState() {
         const currentState = {
             placement: state.signature.placement,
@@ -203,7 +202,6 @@ const History = {
         const newHistory = state.history.slice(0, state.historyPointer + 1);
         state.history = [...newHistory, currentState];
         state.historyPointer = state.history.length - 1;
-        // Manually call render just for the buttons that depend on history state
         UI.render();
     },
 
@@ -270,7 +268,6 @@ const Events = {
         const placement = { x: e.clientX - rect.left, y: e.clientY - rect.top };
         
         if (!state.signature.dataUrl) {
-            // We only need to update placement and open modal, no full state update needed yet
             state.signature.placement = placement;
             UI.openSignatureModal();
         } else {
@@ -296,26 +293,40 @@ const Events = {
         History.saveState();
     },
 
+    // DEBUGGING VERSION of handleDownload
     async handleDownload() {
-        updateState({ ...state, ui: { ...state.ui, message: { text: '正在處理 PDF...', type: 'loading' } } });
+        updateState({ ...state, ui: { ...state.ui, message: { text: '開始偵錯下載流程...', type: 'info' } } });
         try {
             const pdfBytes = await PDF.embedSignature();
-            let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
-            if (!fileName.toLowerCase().endsWith('.pdf')) {
-                fileName += '.pdf';
+
+            if (!pdfBytes || pdfBytes.length === 0) {
+                updateState({ ...state, ui: { ...state.ui, message: { text: '錯誤：產生的 PDF 位元組是空的。', type: 'error' } } });
+                return;
             }
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-            updateState({ ...state, ui: { ...state.ui, message: { text: '處理完成！', type: 'success' } } });
+
+            // Attempt to decode the first 100 bytes as a string to check for PDF header
+            const byteString = new TextDecoder('utf-8', { fatal: true }).decode(pdfBytes.slice(0, 100));
+
+            const debugMessage = `
+                <div style="text-align: left; background: #000; padding: 10px; border-radius: 5px;">
+                <strong>偵錯資訊：</strong><br>
+                - pdfBytes 型別：<span style="color: var(--color-accent);">${Object.prototype.toString.call(pdfBytes)}</span><br>
+                - pdfBytes 長度：<span style="color: var(--color-accent);">${pdfBytes.length}</span> 位元組<br>
+                - 前 100 位元組：<pre style="color: #999; white-space: pre-wrap; word-break: break-all;">${byteString.replace(/</g, '&lt;')}</pre>
+                </div>
+            `;
+
+            updateState({ ...state, ui: { ...state.ui, message: { text: debugMessage, type: 'info' } } });
+
         } catch (err) {
             console.error('嵌入簽名失敗:', err);
-            updateState({ ...state, ui: { ...state.ui, message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
+            const errorMessage = `
+                <div style="text-align: left; background: #200; padding: 10px; border-radius: 5px;">
+                <strong>執行期間捕獲到錯誤:</strong><br>
+                <pre style="color: var(--color-alert); white-space: pre-wrap;">${err.stack || err.message}</pre>
+                </div>
+            `;
+            updateState({ ...state, ui: { ...state.ui, message: { text: errorMessage, type: 'error' } } });
         }
     },
 
