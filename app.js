@@ -24,6 +24,7 @@ const state = {
     signaturePadInstance: null,
 };
 
+// FIX: Decouple state update from rendering. The function should only update the state.
 function updateState(newState) {
     // Deep merge for nested objects like ui and signature
     if (newState.ui) {
@@ -33,8 +34,6 @@ function updateState(newState) {
         newState.signature = { ...state.signature, ...newState.signature };
     }
     Object.assign(state, newState);
-    // Trigger a re-render whenever state changes
-    UI.render();
 }
 
 // ==================================================================================
@@ -82,7 +81,6 @@ const UI = {
         this.elements.instructionsContainer.classList.toggle('hidden', state.ui.currentView !== 'upload'); // Added
         this.elements.pdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
         
-        // **MODIFIED**: Control download container based on its specific state flag
         this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
 
         // Update message area
@@ -99,7 +97,9 @@ const UI = {
         const containerWidth = this.elements.pdfContainer.clientWidth * 0.95;
         const viewportAtScale1 = state.currentPdfPage.getViewport({ scale: 1 });
         const scale = containerWidth / viewportAtScale1.width;
-        updateState({ scale });
+        
+        // FIX: Update state directly here, but don't call the global render
+        state.scale = scale;
 
         const viewport = state.currentPdfPage.getViewport({ scale });
         const context = this.elements.pdfCanvas.getContext('2d');
@@ -146,6 +146,7 @@ const UI = {
             penColor: 'rgb(0, 0, 0)',
         });
         updateState({ signaturePadInstance: signaturePad });
+        // No render needed here as it's just instance creation
     },
 
     openSignatureModal() {
@@ -227,13 +228,13 @@ const History = {
             zoom: state.signature.zoom,
         };
         
-        // If we undo and then make a new change, we should clear the "redo" history
         const newHistory = state.history.slice(0, state.historyPointer + 1);
         
         updateState({
             history: [...newHistory, currentState],
             historyPointer: newHistory.length,
         });
+        UI.render();
     },
 
     undo() {
@@ -244,6 +245,7 @@ const History = {
                 historyPointer: newPointer,
                 signature: { ...state.signature, ...previousState },
             });
+            UI.render();
             UI.renderPdfPage();
         }
     },
@@ -256,6 +258,7 @@ const History = {
                 historyPointer: newPointer,
                 signature: { ...state.signature, ...nextState },
             });
+            UI.render();
             UI.renderPdfPage();
         }
     },
@@ -271,10 +274,12 @@ const Events = {
         const file = e.target.files[0];
         if (!file || file.type !== 'application/pdf') {
             updateState({ ui: { message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
+            UI.render();
             return;
         }
 
         updateState({ ui: { message: { text: '正在載入 PDF...', type: 'loading' }, showDownload: false } });
+        UI.render();
 
         const reader = new FileReader();
         reader.onload = async (event) => {
@@ -283,11 +288,13 @@ const Events = {
                 updateState({
                     ui: { currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
+                UI.render();
                 await UI.renderPdfPage();
-                History.saveState(); // Save the initial blank state
+                History.saveState();
             } catch (err) {
                 console.error('載入 PDF 失敗:', err);
                 updateState({ ui: { message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
+                UI.render();
             }
         };
         reader.readAsArrayBuffer(file);
@@ -305,8 +312,9 @@ const Events = {
             UI.openSignatureModal();
         } else {
             updateState({ ui: { message: { text: '簽名位置已更新。', type: 'info' } } });
-            History.saveState();
+            UI.render();
             UI.renderPdfPage();
+            History.saveState();
         }
     },
 
@@ -320,14 +328,19 @@ const Events = {
             signature: { dataUrl },
             ui: { showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
+        UI.render();
         UI.closeSignatureModal();
-        History.saveState();
         UI.renderPdfPage();
+        History.saveState();
     },
 
     async handleDownload() {
         updateState({ ui: { message: { text: '正在處理 PDF...', type: 'loading' } } });
+        UI.render();
         try {
+            // FIX: Ensure scale is up-to-date before embedding
+            await UI.renderPdfPage(); 
+            
             const pdfBytes = await PDF.embedSignature();
             let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
             if (!fileName.toLowerCase().endsWith('.pdf')) {
@@ -344,9 +357,11 @@ const Events = {
             URL.revokeObjectURL(link.href);
 
             updateState({ ui: { message: { text: '處理完成！', type: 'success' } } });
+            UI.render();
         } catch (err) {
             console.error('嵌入簽名失敗:', err);
             updateState({ ui: { message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
+            UI.render();
         }
     },
 
@@ -358,16 +373,16 @@ const Events = {
             newZoom = Math.max(0.25, newZoom - 0.25);
         }
         updateState({ signature: { zoom: newZoom } });
-        History.saveState();
         UI.renderPdfPage();
+        History.saveState();
     },
 
     handleResize() {
-        if (state.signaturePadInstance && UI.elements.signatureModal.style.display === 'flex') {
-            UI.initializeSignaturePad();
-        }
         if (state.currentPdfPage) {
             UI.renderPdfPage();
+        }
+        if (state.signaturePadInstance && UI.elements.signatureModal.style.display === 'flex') {
+            UI.initializeSignaturePad();
         }
     },
 
