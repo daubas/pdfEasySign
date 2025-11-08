@@ -24,14 +24,8 @@ const state = {
     signaturePadInstance: null,
 };
 
+// FIX: Simplify updateState. The caller is responsible for providing the complete nested object.
 function updateState(newState) {
-    // Deep merge for nested objects like ui and signature
-    if (newState.ui) {
-        newState.ui = { ...state.ui, ...newState.ui };
-    }
-    if (newState.signature) {
-        newState.signature = { ...state.signature, ...newState.signature };
-    }
     Object.assign(state, newState);
     UI.render();
 }
@@ -99,7 +93,6 @@ const UI = {
         await state.currentPdfPage.render({ canvasContext: context, viewport }).promise;
         console.log('Page rendered with scale:', scale);
 
-        // FIX: ALWAYS redraw the signature preview after rendering the PDF page to ensure consistency.
         if (state.signature.dataUrl && state.signature.placement) {
             this.drawSignaturePreview();
         }
@@ -158,6 +151,7 @@ const PDF = {
         const pdfDoc = await loadingTask.promise;
         const page = await pdfDoc.getPage(1);
         updateState({
+            ...state,
             originalPdfBytes: pdfBytes,
             pdfDoc: pdfDoc,
             currentPageNum: 1,
@@ -199,6 +193,7 @@ const PDF = {
 // ==================================================================================
 
 const History = {
+    // FIX: This function should ONLY manage history state. It should NOT trigger a re-render.
     saveState() {
         const currentState = {
             placement: state.signature.placement,
@@ -206,10 +201,10 @@ const History = {
             zoom: state.signature.zoom,
         };
         const newHistory = state.history.slice(0, state.historyPointer + 1);
-        updateState({
-            history: [...newHistory, currentState],
-            historyPointer: newHistory.length,
-        });
+        state.history = [...newHistory, currentState];
+        state.historyPointer = state.history.length - 1;
+        // Manually call render just for the buttons that depend on history state
+        UI.render();
     },
 
     undo() {
@@ -217,6 +212,7 @@ const History = {
             const newPointer = state.historyPointer - 1;
             const previousState = state.history[newPointer];
             updateState({
+                ...state,
                 historyPointer: newPointer,
                 signature: { ...state.signature, ...previousState },
             });
@@ -229,6 +225,7 @@ const History = {
             const newPointer = state.historyPointer + 1;
             const nextState = state.history[newPointer];
             updateState({
+                ...state,
                 historyPointer: newPointer,
                 signature: { ...state.signature, ...nextState },
             });
@@ -245,22 +242,23 @@ const Events = {
     async handleFileUpload(e) {
         const file = e.target.files[0];
         if (!file || file.type !== 'application/pdf') {
-            updateState({ ui: { message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
+            updateState({ ...state, ui: { ...state.ui, message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
             return;
         }
-        updateState({ ui: { message: { text: '正在載入 PDF...', type: 'loading' }, showDownload: false } });
+        updateState({ ...state, ui: { ...state.ui, message: { text: '正在載入 PDF...', type: 'loading' }, showDownload: false } });
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
                 await PDF.loadPdf(event.target.result);
                 updateState({
-                    ui: { currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
+                    ...state,
+                    ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
                 await UI.renderPdfPage();
                 History.saveState();
             } catch (err) {
                 console.error('載入 PDF 失敗:', err);
-                updateState({ ui: { message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
+                updateState({ ...state, ui: { ...state.ui, message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
             }
         };
         reader.readAsArrayBuffer(file);
@@ -270,11 +268,13 @@ const Events = {
         if (!state.currentPdfPage) return;
         const rect = UI.elements.pdfCanvas.getBoundingClientRect();
         const placement = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        updateState({ signature: { placement } });
+        
         if (!state.signature.dataUrl) {
+            // We only need to update placement and open modal, no full state update needed yet
+            state.signature.placement = placement;
             UI.openSignatureModal();
         } else {
-            updateState({ ui: { message: { text: '簽名位置已更新。', type: 'info' } } });
+            updateState({ ...state, signature: { ...state.signature, placement } });
             UI.renderPdfPage();
             History.saveState();
         }
@@ -287,8 +287,9 @@ const Events = {
         }
         const dataUrl = state.signaturePadInstance.toDataURL('image/png');
         updateState({
-            signature: { dataUrl },
-            ui: { showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
+            ...state,
+            signature: { ...state.signature, dataUrl },
+            ui: { ...state.ui, showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
         UI.closeSignatureModal();
         UI.renderPdfPage();
@@ -296,9 +297,8 @@ const Events = {
     },
 
     async handleDownload() {
-        updateState({ ui: { message: { text: '正在處理 PDF...', type: 'loading' } } });
+        updateState({ ...state, ui: { ...state.ui, message: { text: '正在處理 PDF...', type: 'loading' } } });
         try {
-            // The scale is assumed to be correct because renderPdfPage is now robust.
             const pdfBytes = await PDF.embedSignature();
             let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
             if (!fileName.toLowerCase().endsWith('.pdf')) {
@@ -312,10 +312,10 @@ const Events = {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
-            updateState({ ui: { message: { text: '處理完成！', type: 'success' } } });
+            updateState({ ...state, ui: { ...state.ui, message: { text: '處理完成！', type: 'success' } } });
         } catch (err) {
             console.error('嵌入簽名失敗:', err);
-            updateState({ ui: { message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
+            updateState({ ...state, ui: { ...state.ui, message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
         }
     },
 
@@ -326,7 +326,7 @@ const Events = {
         } else {
             newZoom = Math.max(0.25, newZoom - 0.25);
         }
-        updateState({ signature: { zoom: newZoom } });
+        updateState({ ...state, signature: { ...state.signature, zoom: newZoom } });
         UI.renderPdfPage();
         History.saveState();
     },
