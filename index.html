@@ -18,72 +18,73 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
             <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
         </head>
-        <body>
-            <div id="starfield"></div>
-            <div class="citadel-container">
-                <h1 class="text-3xl font-bold text-center mb-6">
-                    PDF Signing Protocol
-                </h1>            
-            <!-- 步驟一：上傳 -->
-            <div id="uploadContainer" class="text-center">
-                <label for="pdfUpload" class="mb-2">Select Document for Signature</label>
-                <input type="file" id="pdfUpload" accept="application/pdf" class="block w-full max-w-md mx-auto">
-            </div>
-    
-            <!-- 訊息與載入區域 -->
-            <div id="messageArea" class="text-center my-4"></div>
-    
-            <!-- 步驟二：簽名 (PDF 預覽) -->
-            <div id="pdfContainer" class="hidden my-4">
-                <div id="zoomControls" class="sticky top-0 z-10 flex justify-center items-center gap-2 mb-4 flex-wrap">
-                    <button id="zoomOutButton" class="p-2 rounded-full">-</button>
-                    <span class="font-medium px-2">Signature Scale</span>
-                    <button id="zoomInButton" class="p-2 rounded-full">+</button>
-                    
-                    <div class="border-l h-6 mx-3 opacity-30"></div>
-    
-                    <button id="pdfUndoButton" class="p-2 rounded-full" disabled>Undo</button>
-                    <span class="font-medium px-2">History</span>
-                    <button id="pdfRedoButton" class="p-2 rounded-full" disabled>Redo</button>
-    
-                    <div class="border-l h-6 mx-3 opacity-30"></div>
-    
-                    <button id="newSignatureButton" class="btn">New Signature</button>
-                </div>
+<body class="p-4 md:p-8">
+    <div id="starfield"></div>
+    <div class="citadel-container">
+        <h1 class="text-3xl font-bold text-center mb-6">
+            PDF 簽署協議
+        </h1>
+        
+        <!-- 步驟一：上傳 -->
+        <div id="uploadContainer" class="text-center">
+            <label for="pdfUpload" class="mb-2">選擇要簽署的文件</label>
+            <input type="file" id="pdfUpload" accept="application/pdf" class="block w-full max-w-md mx-auto">
+        </div>
+
+        <!-- 訊息與載入區域 -->
+        <div id="messageArea" class="text-center my-4"></div>
+
+        <!-- 步驟二：簽名 (PDF 預覽) -->
+        <div id="pdfContainer" class="hidden my-4">
+            <div id="zoomControls" class="sticky top-0 z-10 flex justify-center items-center gap-2 mb-4 flex-wrap">
+                <button id="zoomOutButton" class="p-2 rounded-full">-</button>
+                <span class="font-medium px-2">簽名縮放</span>
+                <button id="zoomInButton" class="p-2 rounded-full">+</button>
                 
-                <p id="pdfMessage" class="text-center text-lg font-medium text-indigo-600 mb-4"></p>
-                <div class="overflow-x-auto">
-                    <canvas id="pdfCanvas"></canvas>
-                </div>
+                <div class="border-l h-6 mx-3 opacity-30"></div>
+
+                <button id="pdfUndoButton" class="p-2 rounded-full" disabled>上一步</button>
+                <span class="font-medium px-2">操作歷史</span>
+                <button id="pdfRedoButton" class="p-2 rounded-full" disabled>下一步</button>
+
+                <div class="border-l h-6 mx-3 opacity-30"></div>
+
+                <button id="newSignatureButton" class="btn">新增簽名</button>
             </div>
-    
-            <!-- 步驟三：下載 -->
-            <div id="downloadContainer" class="text-center hidden mt-6">
-                <div class="mb-4 max-w-md mx-auto">
-                    <label for="fileName" class="block text-sm mb-1 text-left">Download Filename</label>
-                    <input type="text" id="fileName" value="signed_document" placeholder="e.g., my_signed_pdf">
-                </div>
-    
-                <button id="downloadButton" class="btn btn-primary w-full max-w-md mx-auto">
-                    Download Signed PDF
-                </button>
+            
+            <p id="pdfMessage" class="text-center text-lg font-medium text-indigo-600 mb-4"></p>
+            <div class="overflow-x-auto">
+                <canvas id="pdfCanvas"></canvas>
             </div>
         </div>
-    
-        <!-- 簽名 Modal 彈窗 -->
-        <div id="signatureModal">
-            <div class="modal-content">
-                <h3 class="text-xl font-semibold mb-4 text-center">Authorize via Signature</h3>
-                <canvas id="signaturePad" class="mx-auto w-full h-64"></canvas>
-                <div class="flex justify-center gap-2 md:gap-4 mt-4">
-                    <button id="cancelSigButton" class="btn btn-gray">Cancel</button>
-                    <button id="clearSigButton" class="btn">Clear</button>
-                    <button id="saveSigButton" class="btn btn-primary">Save Signature</button>
-                </div>
+
+        <!-- 步驟三：下載 -->
+        <div id="downloadContainer" class="text-center hidden mt-6">
+            <div class="mb-4 max-w-md mx-auto">
+                <label for="fileName" class="block text-sm mb-1 text-left">下載檔名</label>
+                <input type="text" id="fileName" value="已簽署文件" placeholder="例如：我的已簽署PDF">
+            </div>
+
+            <button id="downloadButton" class="btn btn-primary w-full max-w-md mx-auto">
+                下載已簽署的 PDF
+            </button>
+        </div>
+    </div>
+
+    <!-- 簽名 Modal 彈窗 -->
+    <div id="signatureModal">
+        <div class="modal-content">
+            <h3 class="text-xl font-semibold mb-4 text-center">請在此處簽名授權</h3>
+            <canvas id="signaturePad" class="mx-auto w-full h-64"></canvas>
+            <div class="flex justify-center gap-2 md:gap-4 mt-4">
+                <button id="cancelSigButton" class="btn btn-gray">取消</button>
+                <button id="clearSigButton" class="btn">清除</button>
+                <button id="saveSigButton" class="btn btn-primary">儲存簽名</button>
             </div>
         </div>
-    
-        <script type="module" src="app.js"></script>
-    </body>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
     </html>
     

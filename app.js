@@ -260,12 +260,12 @@ const Events = {
     async handleFileUpload(e) {
         const file = e.target.files[0];
         if (!file || file.type !== 'application/pdf') {
-            updateState({ ui: { ...state.ui, message: { text: 'Please select a PDF file.', type: 'error' } } });
+            updateState({ ui: { ...state.ui, message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
             UI.render();
             return;
         }
 
-        updateState({ ui: { ...state.ui, message: { text: 'Loading PDF...', type: 'loading' } } });
+        updateState({ ui: { ...state.ui, message: { text: '正在載入 PDF...', type: 'loading' } } });
         UI.render();
 
         const reader = new FileReader();
@@ -273,7 +273,7 @@ const Events = {
             try {
                 await PDF.loadPdf(event.target.result);
                 updateState({
-                    ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF loaded successfully! Click on the preview to place your signature.', type: 'info' } },
+                    ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
                 // First, render the UI to make the container visible
                 UI.render();
@@ -281,8 +281,8 @@ const Events = {
                 await UI.renderPdfPage();
                 History.saveState(); // Save the initial blank state
             } catch (err) {
-                console.error('Failed to load PDF:', err);
-                updateState({ ui: { ...state.ui, message: { text: `Failed to load PDF: ${err.message}`, type: 'error' } } });
+                console.error('載入 PDF 失敗:', err);
+                updateState({ ui: { ...state.ui, message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
                 UI.render();
             }
         };
@@ -300,7 +300,7 @@ const Events = {
         if (!state.signature.dataUrl) {
             UI.openSignatureModal();
         } else {
-            updateState({ ui: { ...state.ui, message: { text: 'Signature position updated.', type: 'info' } } });
+            updateState({ ui: { ...state.ui, message: { text: '簽名位置已更新。', type: 'info' } } });
             History.saveState();
             UI.renderPdfPage();
         }
@@ -308,13 +308,13 @@ const Events = {
 
     handleSaveSignature() {
         if (state.signaturePadInstance.isEmpty()) {
-            alert('Signature is empty.');
+            alert('簽名欄位是空的。');
             return;
         }
         const dataUrl = state.signaturePadInstance.toDataURL('image/png');
         updateState({
             signature: { ...state.signature, dataUrl },
-            ui: { ...state.ui, currentView: 'sign', message: { text: 'Signature saved! You can adjust the position or download.', type: 'success' } },
+            ui: { ...state.ui, currentView: 'sign', message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
         UI.elements.downloadContainer.classList.remove('hidden'); // Explicitly show download button
         UI.closeSignatureModal();
@@ -324,16 +324,16 @@ const Events = {
     },
 
     async handleDownload() {
-        updateState({ ui: { ...state.ui, message: { text: 'Processing PDF...', type: 'loading' } } });
+        updateState({ ui: { ...state.ui, message: { text: '正在處理 PDF...', type: 'loading' } } });
         UI.render();
         try {
             const pdfBytes = await PDF.embedSignature();
-            let fileName = UI.elements.fileNameInput.value.trim() || 'signed_document';
+            let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
             if (!fileName.toLowerCase().endsWith('.pdf')) {
                 fileName += '.pdf';
             }
             
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const blob = new Blob([bytes], { type: 'application/pdf' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = fileName;
@@ -342,11 +342,11 @@ const Events = {
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
 
-            updateState({ ui: { ...state.ui, message: { text: 'Processing complete!', type: 'success' } } });
+            updateState({ ui: { ...state.ui, message: { text: '處理完成！', type: 'success' } } });
             UI.render();
         } catch (err) {
-            console.error('Failed to embed signature:', err);
-            updateState({ ui: { ...state.ui, message: { text: `Failed to embed signature: ${err.message}`, type: 'error' } } });
+            console.error('嵌入簽名失敗:', err);
+            updateState({ ui: { ...state.ui, message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
             UI.render();
         }
     },
