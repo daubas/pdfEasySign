@@ -17,15 +17,24 @@ const state = {
     historyPointer: -1,
     ui: {
         isLoading: false,
-        currentView: 'upload', // 'upload', 'sign', 'download'
+        currentView: 'upload', // 'upload', 'sign'
+        showDownload: false, // Controls visibility of the download container
         message: { text: '', type: 'info' }, // { text, type }
     },
     signaturePadInstance: null,
 };
 
 function updateState(newState) {
+    // Deep merge for nested objects like ui and signature
+    if (newState.ui) {
+        newState.ui = { ...state.ui, ...newState.ui };
+    }
+    if (newState.signature) {
+        newState.signature = { ...state.signature, ...newState.signature };
+    }
     Object.assign(state, newState);
-    // Potentially, you could trigger re-renders or updates here if using a more complex UI framework
+    // Trigger a re-render whenever state changes
+    UI.render();
 }
 
 // ==================================================================================
@@ -70,7 +79,9 @@ const UI = {
         // Show/hide main containers based on state
         this.elements.uploadContainer.classList.toggle('hidden', state.ui.currentView !== 'upload');
         this.elements.pdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
-        this.elements.downloadContainer.classList.toggle('hidden', state.ui.currentView !== 'download');
+        
+        // **MODIFIED**: Control download container based on its specific state flag
+        this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
 
         // Update message area
         this.showMessage(state.ui.message.text, state.ui.message.type);
@@ -221,7 +232,6 @@ const History = {
             history: [...newHistory, currentState],
             historyPointer: newHistory.length,
         });
-        UI.render();
     },
 
     undo() {
@@ -233,7 +243,6 @@ const History = {
                 signature: { ...state.signature, ...previousState },
             });
             UI.renderPdfPage();
-            UI.render();
         }
     },
 
@@ -246,7 +255,6 @@ const History = {
                 signature: { ...state.signature, ...nextState },
             });
             UI.renderPdfPage();
-            UI.render();
         }
     },
 };
@@ -260,30 +268,24 @@ const Events = {
     async handleFileUpload(e) {
         const file = e.target.files[0];
         if (!file || file.type !== 'application/pdf') {
-            updateState({ ui: { ...state.ui, message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
-            UI.render();
+            updateState({ ui: { message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
             return;
         }
 
-        updateState({ ui: { ...state.ui, message: { text: '正在載入 PDF...', type: 'loading' } } });
-        UI.render();
+        updateState({ ui: { message: { text: '正在載入 PDF...', type: 'loading' }, showDownload: false } });
 
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
                 await PDF.loadPdf(event.target.result);
                 updateState({
-                    ui: { ...state.ui, currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
+                    ui: { currentView: 'sign', message: { text: 'PDF 載入成功！請點擊預覽圖以放置簽名。', type: 'info' } },
                 });
-                // First, render the UI to make the container visible
-                UI.render();
-                // Now that the container is visible, render the PDF page
                 await UI.renderPdfPage();
                 History.saveState(); // Save the initial blank state
             } catch (err) {
                 console.error('載入 PDF 失敗:', err);
-                updateState({ ui: { ...state.ui, message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
-                UI.render();
+                updateState({ ui: { message: { text: `載入 PDF 失敗: ${err.message}`, type: 'error' } } });
             }
         };
         reader.readAsArrayBuffer(file);
@@ -295,12 +297,12 @@ const Events = {
         const rect = UI.elements.pdfCanvas.getBoundingClientRect();
         const placement = { x: e.clientX - rect.left, y: e.clientY - rect.top };
         
-        updateState({ signature: { ...state.signature, placement } });
+        updateState({ signature: { placement } });
 
         if (!state.signature.dataUrl) {
             UI.openSignatureModal();
         } else {
-            updateState({ ui: { ...state.ui, message: { text: '簽名位置已更新。', type: 'info' } } });
+            updateState({ ui: { message: { text: '簽名位置已更新。', type: 'info' } } });
             History.saveState();
             UI.renderPdfPage();
         }
@@ -313,19 +315,16 @@ const Events = {
         }
         const dataUrl = state.signaturePadInstance.toDataURL('image/png');
         updateState({
-            signature: { ...state.signature, dataUrl },
-            ui: { ...state.ui, currentView: 'sign', message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
+            signature: { dataUrl },
+            ui: { showDownload: true, message: { text: '簽名已儲存！您可以調整位置或下載。', type: 'success' } },
         });
-        UI.elements.downloadContainer.classList.remove('hidden'); // Explicitly show download button
         UI.closeSignatureModal();
         History.saveState();
         UI.renderPdfPage();
-        UI.render();
     },
 
     async handleDownload() {
-        updateState({ ui: { ...state.ui, message: { text: '正在處理 PDF...', type: 'loading' } } });
-        UI.render();
+        updateState({ ui: { message: { text: '正在處理 PDF...', type: 'loading' } } });
         try {
             const pdfBytes = await PDF.embedSignature();
             let fileName = UI.elements.fileNameInput.value.trim() || '已簽署文件';
@@ -333,7 +332,7 @@ const Events = {
                 fileName += '.pdf';
             }
             
-            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = fileName;
@@ -342,12 +341,10 @@ const Events = {
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
 
-            updateState({ ui: { ...state.ui, message: { text: '處理完成！', type: 'success' } } });
-            UI.render();
+            updateState({ ui: { message: { text: '處理完成！', type: 'success' } } });
         } catch (err) {
             console.error('嵌入簽名失敗:', err);
-            updateState({ ui: { ...state.ui, message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
-            UI.render();
+            updateState({ ui: { message: { text: `嵌入簽名失敗: ${err.message}`, type: 'error' } } });
         }
     },
 
@@ -358,7 +355,7 @@ const Events = {
         } else {
             newZoom = Math.max(0.25, newZoom - 0.25);
         }
-        updateState({ signature: { ...state.signature, zoom: newZoom } });
+        updateState({ signature: { zoom: newZoom } });
         History.saveState();
         UI.renderPdfPage();
     },
