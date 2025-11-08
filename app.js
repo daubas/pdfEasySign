@@ -410,10 +410,31 @@ const Events = {
 // 6. App Initialization
 // ==================================================================================
 
+function createStarfield() {
+    const starfield = document.getElementById('starfield');
+    if (!starfield) return;
+    const numStars = 200;
+    for (let i = 0; i < numStars; i++) {
+        const star = document.createElement('div');
+        star.className = 'star';
+        const size = Math.random() * 3;
+        star.style.width = `${size}px`;
+        star.style.height = `${size}px`;
+        star.style.top = `${Math.random() * 100}%`;
+        star.style.left = `${Math.random() * 100}%`;
+        star.style.animationDelay = `${Math.random() * 2}s`;
+        star.style.animationDuration = `${2 + Math.random() * 2}s`;
+        starfield.appendChild(star);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Set up pdf.js worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
     
+    // Create the animated background
+    createStarfield();
+
     // Bind all event listeners
     Events.bind();
 

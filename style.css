@@ -1,47 +1,264 @@
-/* 自訂樣式 */
-body {
-    font-family: 'Inter', 'Noto Sans TC', sans-serif;
-    background-color: #f4f7f6;
+/* ==========================================================================
+   The Citadel Design Manifest - Style Guide
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Core & Typography
+   -------------------------------------------------------------------------- */
+:root {
+    --color-base: #0D1117; /* 極夜黑 */
+    --color-structure: #161B22; /* 深空灰 (比碳纖維灰更深，更融入背景) */
+    --color-accent: #00FFFF; /* 電光藍 */
+    --color-text: #E0E0E0; /* 文本白 */
+    --color-alert: #FF9900; /* 警告橙 */
+    --color-border: rgba(0, 255, 255, 0.3); /* 邊框能量光暈 */
+    --font-heading: 'Orbitron', sans-serif;
+    --font-body: 'Roboto', sans-serif;
 }
-/* PDF 畫布的游標 */
+
+body {
+    font-family: var(--font-body);
+    background-color: var(--color-base);
+    color: var(--color-text);
+    overflow: hidden; /* 隱藏滾動條，讓星空背景填滿 */
+}
+
+/* --------------------------------------------------------------------------
+   2. Starfield Background Animation
+   -------------------------------------------------------------------------- */
+#starfield {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background: var(--color-base);
+    animation: animateStars 50s linear infinite;
+}
+
+@keyframes animateStars {
+    from {
+        background-position: 0 0;
+    }
+    to {
+        background-position: -10000px 5000px;
+    }
+}
+
+/* We will generate stars with JavaScript, but set the base style here */
+.star {
+    position: absolute;
+    background: white;
+    border-radius: 50%;
+    animation: twinkle 2s infinite ease-in-out;
+}
+
+@keyframes twinkle {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+
+/* --------------------------------------------------------------------------
+   3. Main Structure & Layout (The Citadel Hull)
+   -------------------------------------------------------------------------- */
+.citadel-container {
+    max-width: 5xl;
+    margin: auto;
+    background-color: rgba(22, 27, 34, 0.85); /* 半透明結構色 */
+    backdrop-filter: blur(10px); /* 玻璃擬態效果 */
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem; /* 12px */
+    box-shadow: 0 0 25px rgba(0, 255, 255, 0.1); /* 能量光暈 */
+    padding: 2.5rem; /* 40px */
+    position: relative;
+    z-index: 1;
+}
+
+h1, h3 {
+    font-family: var(--font-heading);
+    color: var(--color-accent);
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------------------
+   4. UI Components (Modular Wards)
+   -------------------------------------------------------------------------- */
+
+/* Input Fields & Labels */
+label {
+    font-family: var(--font-heading);
+    font-size: 1.125rem; /* 18px */
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+    display: block;
+}
+
+input[type="file"] {
+    font-family: var(--font-body);
+    color: var(--color-text);
+}
+
+/* File input styling */
+input[type="file"]::file-selector-button {
+    background-color: transparent;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    text-shadow: 0 0 4px rgba(0, 255, 255, 0.5);
+}
+
+input[type="file"]::file-selector-button:hover {
+    background-color: var(--color-accent);
+    color: var(--color-base);
+    box-shadow: 0 0 15px var(--color-accent);
+}
+
+input[type="text"] {
+    background-color: rgba(13, 17, 23, 0.7);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    transition: all 0.2s ease-in-out;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+/* Buttons (Activation Switches) */
+.btn {
+    font-family: var(--font-heading);
+    background-color: transparent;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn:hover {
+    background-color: var(--color-accent);
+    color: var(--color-base);
+    box-shadow: 0 0 20px var(--color-accent);
+}
+
+.btn-primary {
+    background-color: var(--color-accent);
+    color: var(--color-base);
+}
+
+.btn-primary:hover {
+    background-color: transparent;
+    color: var(--color-accent);
+}
+
+.btn-gray {
+    border-color: #4A4F55;
+    color: #A0A0A0;
+}
+.btn-gray:hover {
+    background-color: #4A4F55;
+    color: var(--color-text);
+    box-shadow: 0 0 15px #4A4F55;
+}
+
+
+/* Control Bar */
+#zoomControls {
+    background-color: rgba(13, 17, 23, 0.8);
+    backdrop-filter: blur(5px);
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-border);
+}
+
+#zoomControls button {
+    background-color: var(--color-structure);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    transition: all 0.2s ease-in-out;
+}
+
+#zoomControls button:hover {
+    background-color: var(--color-accent);
+    color: var(--color-base);
+    border-color: var(--color-accent);
+}
+
+#zoomControls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* PDF Canvas & Signature Pad */
 #pdfCanvas {
     cursor: crosshair;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--color-accent);
     border-radius: 0.5rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
 }
-/* 簽名板 modal */
+
+#signaturePad {
+    border: 1px dashed var(--color-accent);
+    border-radius: 0.5rem;
+    background-color: rgba(224, 224, 224, 0.1);
+}
+
+/* Modal (Access Protocol) */
 #signatureModal {
-    display: none; /* 預設隱藏 */
+    display: none;
     position: fixed;
     z-index: 50;
     left: 0;
     top: 0;
     width: 100%;
     height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.6);
-    /* 彈性置中 */
-    display: none;
+    background-color: rgba(0,0,0,0.7);
+    backdrop-filter: blur(5px);
     align-items: center;
     justify-content: center;
 }
-#signaturePad {
-    border: 1px dashed #aaa;
+
+.modal-content {
+    background-color: var(--color-structure);
+    padding: 1.5rem;
     border-radius: 0.5rem;
-    background-color: #f9f9f9; /* 更改背景色以突顯簽名區 */
+    border: 1px solid var(--color-border);
+    box-shadow: 0 0 30px rgba(0, 255, 255, 0.2);
+    width: 90%;
+    max-width: 500px;
 }
-/* 簡單的載入動畫 */
+
+/* Loader (System Activation) */
 .loader {
-    border: 5px solid #f3f3f3;
-    border-top: 5px solid #3498db;
-    border-radius: 50%;
     width: 50px;
     height: 50px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 20px auto;
 }
+
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
