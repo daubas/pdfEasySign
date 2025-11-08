@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡易 PDF 簽名工具</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 pdf.js (渲染 PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js"></script>
+    <!-- 載入 pdf-lib.js (修改 PDF) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+    <!-- 載入 signature_pad.js (簽名版) - 更換為 UMD 版本 -->
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <style>
+        /* 自訂樣式 */
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f4f7f6;
+        }
+        /* PDF 畫布的游標 */
+        #pdfCanvas {
+            cursor: crosshair;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        /* 簽名板 modal */
+        #signatureModal {
+            display: none; /* 預設隱藏 */
+            position: fixed;
+            z-index: 50;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+            /* 彈性置中 */
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        #signaturePad {
+            border: 1px dashed #aaa;
+            border-radius: 0.5rem;
+            background-color: #f9f9f9; /* 更改背景色以突顯簽名區 */
+        }
+        /* 簡單的載入動畫 */
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-5xl mx-auto bg-white p-6 md:p-10 rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">
+            簡易 PDF 簽名工具
+        </h1>
+        
+        <!-- 步驟一：上傳 -->
+        <div id="uploadContainer" class="text-center">
+            <label for="pdfUpload" class="mb-2 block text-lg font-medium text-gray-700">請選擇要簽署的 PDF 檔案</label>
+            <input type="file" id="pdfUpload" accept="application/pdf" class="block w-full max-w-md mx-auto text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-lg file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100 transition duration-200
+                cursor-pointer">
+        </div>
+
+        <!-- 訊息與載入區域 -->
+        <div id="messageArea" class="text-center my-4"></div>
+
+        <!-- 步驟二：簽名 (PDF 預覽) -->
+        <div id="pdfContainer" class="hidden my-4">
+            <!-- 縮放與上一步/下一步 控制按鈕 -->
+            <!-- 修改：新增 sticky, top-0, z-10, bg-white, py-3, shadow-sm 讓控制列固定在頂部 -->
+            <div id="zoomControls" class="sticky top-0 z-10 flex justify-center items-center gap-2 mb-4 flex-wrap bg-white py-3 shadow-sm">
+                <!-- 簽名縮放 -->
+                <button id="zoomOutButton" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-2 rounded-full shadow transition duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 13H7" />
+                    </svg>
+                </button>
+                <span class="text-gray-700 font-medium px-2">簽名縮放</span>
+                <button id="zoomInButton" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-2 rounded-full shadow transition duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3h-6" />
+                    </svg>
+                </button>
+                
+                <!-- 分隔線 -->
+                <div class="border-l h-6 mx-3 border-gray-300"></div>
+
+                <!-- PDF 上一步/下一步 -->
+                <button id="pdfUndoButton" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-2 rounded-full shadow transition duration-200" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 01-18 0z" />
+                    </svg>
+                </button>
+                <span class="text-gray-700 font-medium px-2">PDF 狀態</span>
+                <button id="pdfRedoButton" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold p-2 rounded-full shadow transition duration-200" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 15l3-3m0 0l-3-3m3 3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </button>
+
+                <!-- 分隔線 -->
+                <div class="border-l h-6 mx-3 border-gray-300"></div>
+
+                <!-- 新增：更換簽名按鈕 -->
+                <button id="newSignatureButton" class="bg-blue-100 hover:bg-blue-200 text-blue-800 font-medium py-2 px-4 rounded-lg shadow transition duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    新增/更換簽名
+                </button>
+            </div>
+            
+            <p id="pdfMessage" class="text-center text-lg font-medium text-indigo-600 mb-4"></p>
+            <div class="overflow-x-auto">
+                <!-- PDF 渲染畫布 -->
+                <canvas id="pdfCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- 步驟三：下載 -->
+        <div id="downloadContainer" class="text-center hidden mt-6">
+            <!-- 新增：下載檔名輸入框 -->
+            <div class="mb-4 max-w-md mx-auto">
+                <label for="fileName" class="block text-sm font-medium text-gray-700 mb-1 text-left">下載檔名</label>
+                <input type="text" id="fileName" value="signed_document" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="例如：my_signed_pdf">
+            </div>
+
+            <button id="downloadButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition duration-300 transform hover:scale-105">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                下載已簽名的 PDF
+            </button>
+        </div>
+    </div>
+
+    <!-- 簽名 Modal 彈窗 -->
+    <div id="signatureModal" class="">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg m-4">
+            <h3 class="text-xl font-semibold mb-4 text-center">請在下方空白處簽名</h3>
+            <!-- 簽名畫布 - 移除固定 width/height, 改用 class h-64 -->
+            <canvas id="signaturePad" class="mx-auto w-full h-64"></canvas>
+            <div class="flex justify-center gap-2 md:gap-4 mt-4">
+                <!-- 移除：簽名板 上一步/下一步 按鈕 -->
+                
+                <!-- 新增：取消按鈕 -->
+                <button id="cancelSigButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-200">
+                    取消
+                </button>
+                <button id="clearSigButton" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 md:px-6 rounded-lg transition duration-200">
+                    清除
+                </button>
+                <button id="saveSigButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 md:px-6 rounded-lg transition duration-200">
+                    儲存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 解構 pdf-lib 的功能
+        const { PDFDocument, rgb } = PDFLib;
+
+        // 設定 pdf.js worker 的路徑
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+
+        // DOM 元素
+        const pdfUpload = document.getElementById('pdfUpload');
+        const pdfContainer = document.getElementById('pdfContainer');
+        const pdfCanvas = document.getElementById('pdfCanvas');
+        const pdfMessage = document.getElementById('pdfMessage');
+        const downloadContainer = document.getElementById('downloadContainer');
+        const downloadButton = document.getElementById('downloadButton');
+        const messageArea = document.getElementById('messageArea');
+        
+        // 新增：檔名輸入框 DOM
+        const fileNameInput = document.getElementById('fileName');
+        
+        // 簽名 Modal 元素
+        const signatureModal = document.getElementById('signatureModal');
+        const signaturePadCanvas = document.getElementById('signaturePad');
+        const clearSigButton = document.getElementById('clearSigButton');
+        const saveSigButton = document.getElementById('saveSigButton');
+        
+        // 新增：取消簽名按鈕
+        const cancelSigButton = document.getElementById('cancelSigButton');
+        
+        // 移除：簽名板的上一步/下一步
+        
+        // 縮放按鈕
+        const zoomInButton = document.getElementById('zoomInButton');
+        const zoomOutButton = document.getElementById('zoomOutButton');
+        
+        // 新增：PDF 上一步/下一步按鈕
+        const pdfUndoButton = document.getElementById('pdfUndoButton');
+        const pdfRedoButton = document.getElementById('pdfRedoButton');
+
+        // 新增：更換簽名按鈕
+        const newSignatureButton = document.getElementById('newSignatureButton');
+        
+        let signaturePad = null;
+        let originalPdfBytes = null; // 儲存原始 PDF 的 ArrayBuffer
+        let pdfDoc = null; // pdf.js 載入的物件
+        let currentPageNum = 1; // 簡化：只處理第一頁
+        let currentPdfPage = null; // 儲存當前渲染的 pdf.js 頁面
+        let currentScale = 1.5; // PDF 渲染的*最終*縮放 (會被 renderPage 覆蓋)
+        let zoomLevel = 1.0; // 使用者控制的 *簽名* 縮放等級
+        
+        let signatureDataUrl = null; // 儲存簽名的 base64 圖像
+        let signaturePlacement = null; // { x, y } 儲存簽名點擊位置 (canvas 座標)
+        
+        // 移除：簽名板歷史紀錄
+        
+        // 新增：PDF 狀態歷史紀錄
+        let pdfHistory = [];
+        let pdfHistoryPointer = -1;
+        
+        // 1. 初始化簽名板
+        function initializeSignaturePad() {
+            // 調整 canvas 尺寸以適應高DPI螢幕
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            signaturePadCanvas.width = signaturePadCanvas.offsetWidth * ratio;
+            signaturePadCanvas.height = signaturePadCanvas.offsetHeight * ratio;
+            signaturePadCanvas.getContext("2d").scale(ratio, ratio);
+            
+            if (signaturePad) {
+                signaturePad.off(); // 移除舊的監聽器
+            }
+
+            signaturePad = new SignaturePad(signaturePadCanvas, {
+                backgroundColor: 'rgb(249, 249, 249)', /* 配合 CSS 的背景色 */
+                penColor: 'rgb(0, 0, 0)' /* 修正問題1：明確設定畫筆為黑色 */
+            });
+
+            // 移除：設定簽名板歷史紀錄
+        }
+
+        // 移除：更新簽名板上一步/下一步按鈕狀態
+        
+        // 2. 處理檔案上傳
+        pdfUpload.addEventListener('change', handleFileUpload);
+
+        async function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file || file.type !== 'application/pdf') {
+                showMessage('請選擇一個 PDF 檔案。', 'error');
+                return;
+            }
+
+            showMessage('載入 PDF 中...', 'loading');
+            
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    originalPdfBytes = event.target.result; // 儲存 ArrayBuffer
+                    
+                    // 使用 pdf.js 載入 PDF
+                    const loadingTask = pdfjsLib.getDocument({ data: originalPdfBytes });
+                    pdfDoc = await loadingTask.promise;
+                    
+                    showMessage('', 'clear'); // 清除載入訊息
+                    pdfContainer.classList.remove('hidden');
+                    pdfMessage.textContent = 'PDF 載入成功！請點擊 PDF 預覽圖以放置簽名。';
+
+                    // 渲染第一頁
+                    await renderPage(currentPageNum);
+                    
+                    // 新增：初始化 PDF 歷史紀錄
+                    pdfHistory = [{ placement: null, dataUrl: null, zoom: zoomLevel }]; // 儲存初始狀態
+                    pdfHistoryPointer = 0;
+                    updatePdfUndoRedoButtons();
+                    
+                } catch (err) {
+                    console.error('載入 PDF 失敗:', err);
+                    showMessage(`載入 PDF 失敗: ${err.message}`, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 3. 渲染 PDF 頁面到 Canvas
+        async function renderPage(pageNum) {
+            if (!pdfDoc) return;
+            
+            try {
+                currentPdfPage = await pdfDoc.getPage(pageNum);
+                
+                // 根據容器寬度動態計算縮放比例
+                const containerWidth = pdfContainer.clientWidth * 0.95; // 留點邊距
+                const viewportAtScale1 = currentPdfPage.getViewport({ scale: 1 });
+                
+                // **修改：移除 zoomLevel 對 PDF 縮放的影響**
+                const scale = (containerWidth / viewportAtScale1.width);
+                currentScale = scale; // 儲存當前縮放，供後續計算
+                
+                const viewport = currentPdfPage.getViewport({ scale: currentScale });
+                
+                const context = pdfCanvas.getContext('2d');
+                pdfCanvas.height = viewport.height;
+                pdfCanvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                await currentPdfPage.render(renderContext).promise;
+                console.log('頁面渲染完畢');
+                
+                // (重新) 繪製簽名預覽
+                if (signatureDataUrl && signaturePlacement) {
+                    drawSignaturePreview();
+                }
+
+            } catch (err) {
+                console.error('渲染頁面失敗:', err);
+                showMessage(`渲染頁面失敗: ${err.message}`, 'error');
+            }
+        }
+        
+        // 4. 處理 PDF Canvas 上的點擊
+        pdfCanvas.addEventListener('click', handleCanvasClick);
+        
+        async function handleCanvasClick(e) { // 修正問題2：將函數改為 async
+            if (!currentPdfPage) return; // 尚未載入 PDF
+
+            // 獲取相對於 canvas 的點擊座標
+            const rect = pdfCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            signaturePlacement = { x, y }; // 儲存點擊位置
+            console.log('Canvas 點擊位置 (pixel):', signaturePlacement);
+            
+            if (!signatureDataUrl) {
+                // 如果還沒有簽名，打開簽名 modal
+                openSignatureModal();
+            } else {
+                // 如果已經有簽名，重新放置預覽圖
+                pdfMessage.textContent = '簽名位置已更新。可再次點擊調整，或點擊下載。';
+                
+                // 新增：儲存 PDF 狀態
+                savePdfState();
+                await renderPage(currentPageNum); // 狀態儲存後再重繪
+            }
+        }
+        
+        // 5. 簽名 Modal 相關操作
+        function openSignatureModal() {
+            // 修正：必須先將 modal 設為可見，才能正確讀取到 offsetWidth
+            signatureModal.style.display = 'flex';
+            
+            if (!signaturePad) {
+                initializeSignaturePad();
+            } else {
+                signaturePad.clear();
+            }
+            // 移除：打開時重設按鈕狀態
+        }
+        
+        function closeSignatureModal() {
+            signatureModal.style.display = 'none';
+        }
+
+        // 新增：取消簽名按鈕事件
+        cancelSigButton.addEventListener('click', closeSignatureModal);
+
+        clearSigButton.addEventListener('click', () => {
+            signaturePad.clear();
+            // 移除：重設簽名歷史
+        });
+        
+        saveSigButton.addEventListener('click', () => {
+            if (signaturePad.isEmpty()) {
+                alert('簽名欄位是空的。');
+                return;
+            }
+            
+            // 獲取 PNG 格式的簽名
+            signatureDataUrl = signaturePad.toDataURL('image/png');
+            closeSignatureModal();
+            
+            // 在 Canvas 上繪製預覽
+            drawSignaturePreview();
+            
+            // 顯示下載按鈕
+            pdfMessage.textContent = '簽名已儲存！可再次點擊 PDF 調整位置，或點擊下載。';
+            downloadContainer.classList.remove('hidden');
+            
+            // 新增：儲存 PDF 狀態 (包含新簽名)
+            savePdfState();
+        });
+
+        // 6. 在 Canvas 上繪製簽名預覽 (非嵌入)
+        function drawSignaturePreview() {
+            if (!signatureDataUrl || !signaturePlacement || !pdfCanvas) return;
+            
+            const context = pdfCanvas.getContext('2d');
+            const sigImage = new Image();
+            sigImage.onload = () => {
+                // **修改：使用 zoomLevel 調整簽名預覽大小**
+                const baseSigWidth = 120; // 基礎寬度
+                const baseSigHeight = 60; // 基礎高度
+                const sigWidth = baseSigWidth * zoomLevel;
+                const sigHeight = baseSigHeight * zoomLevel;
+                
+                // 從點擊位置的左上角開始繪製
+                context.drawImage(sigImage, signaturePlacement.x, signaturePlacement.y, sigWidth, sigHeight);
+            };
+            sigImage.src = signatureDataUrl;
+        }
+
+        // 7. 嵌入簽名並下載
+        downloadButton.addEventListener('click', embedSignatureAndDownload);
+        
+        async function embedSignatureAndDownload() {
+            if (!originalPdfBytes || !signatureDataUrl || !signaturePlacement) {
+                alert('發生錯誤：缺少 PDF、簽名或放置位置。');
+                return;
+            }
+            
+            showMessage('正在處理 PDF...', 'loading');
+            
+            try {
+                // 載入原始 PDF
+                const pdfDoc = await PDFDocument.load(originalPdfBytes);
+                const pages = pdfDoc.getPages();
+                // 這裡我們只處理第一頁 (與渲染一致)
+                const firstPage = pages[currentPageNum - 1]; 
+                
+                const { width: pageWidth, height: pageHeight } = firstPage.getSize();
+                
+                // 載入簽名圖片
+                const sigImageBytes = await fetch(signatureDataUrl).then(res => res.arrayBuffer());
+                const sigImage = await pdfDoc.embedPng(sigImageBytes);
+                
+                // --- 座標轉換 (最關鍵的部分) ---
+                // 我們需要將「Canvas 像素座標」轉換為「PDF 點(point)座標」
+                
+                // A. Canvas 尺寸 (像素)
+                const canvasWidth = pdfCanvas.width;
+                const canvasHeight = pdfCanvas.height;
+                
+                // B. PDF 頁面尺寸 (點)
+                // (pageWidth, pageHeight 已經有了)
+                
+                // C. 比例 = PDF 點 / Canvas 像素
+                const viewport = currentPdfPage.getViewport({ scale: currentScale });
+                const scaleX = pageWidth / viewport.width;
+                const scaleY = pageHeight / viewport.height;
+                
+                // D. **修改：簽名在 PDF 上的尺寸 (點)，受 zoomLevel 影響**
+                const baseSigWidthPoints = 120;
+                const baseSigHeightPoints = 60;
+                const sigWidthPoints = baseSigWidthPoints * zoomLevel;
+                const sigHeightPoints = baseSigHeightPoints * zoomLevel;
+                
+                // E. 轉換座標
+                // Canvas 座標 (左上角為 0,0)
+                const canvasX = signaturePlacement.x;
+                const canvasY = signaturePlacement.y;
+                
+                // 轉換為 PDF 座標 (左下角為 0,0)
+                const pdfX = canvasX * scaleX;
+                // PDF Y 座標是反轉的
+                const pdfY = pageHeight - (canvasY * scaleY) - sigHeightPoints; // 減去簽名高度，使點擊位置為左上角
+                
+                console.log('PDF 尺寸 (points):', pageWidth, pageHeight);
+                console.log('Canvas 尺寸 (pixels):', canvasWidth, canvasHeight);
+                console.log('轉換比例 (X, Y):', scaleX, scaleY);
+                console.log('點擊的 PDF 座標 (points):', pdfX, pdfY);
+
+                // 在 PDF 上繪製簽名
+                firstPage.drawImage(sigImage, {
+                    x: pdfX,
+                    y: pdfY,
+                    width: sigWidthPoints,
+                    height: sigHeightPoints,
+                });
+
+                // 儲存 PDF
+                const pdfBytes = await pdfDoc.save();
+
+                // 新增：從輸入框獲取檔名
+                let fileName = fileNameInput.value.trim();
+                if (!fileName) {
+                    fileName = 'signed_document'; // 預設名稱
+                }
+                // 確保副檔名是 .pdf
+                if (!fileName.toLowerCase().endsWith('.pdf')) {
+                    fileName += '.pdf';
+                }
+
+                // 觸發下載
+                downloadFile(pdfBytes, fileName, 'application/pdf');
+                
+                showMessage('處理完成！', 'success');
+
+            } catch (err) {
+                console.error('嵌入簽名失敗:', err);
+                showMessage(`嵌入簽名失敗: ${err.message}`, 'error');
+            }
+        }
+        
+        // 8. 輔助功能：顯示訊息
+        function showMessage(message, type = 'info') {
+            messageArea.innerHTML = ''; // 清空
+            if (type === 'loading') {
+                const loader = document.createElement('div');
+                loader.className = 'loader';
+                messageArea.appendChild(loader);
+                const text = document.createElement('p');
+                text.textContent = message;
+                text.className = 'text-blue-600';
+                messageArea.appendChild(text);
+            } else if (type === 'error') {
+                messageArea.innerHTML = `<p class="text-red-600 font-medium">${message}</p>`;
+            } else if (type === 'success') {
+                messageArea.innerHTML = `<p class="text-green-600 font-medium">${message}</p>`;
+            } else if (type === 'info') {
+                messageArea.innerHTML = `<p class="text-gray-600">${message}</p>`;
+            } else if (type === 'clear') {
+                messageArea.innerHTML = '';
+            }
+        }
+
+        // 9. 輔助功能：觸發下載
+        function downloadFile(bytes, fileName, mimeType) {
+            const blob = new Blob([bytes], { type: mimeType });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
+        
+        // --- 新增：歷史紀錄管理 ---
+        
+        // 儲存當前 PDF 狀態 (簽名、位置和縮放)
+        function savePdfState() {
+            const state = {
+                placement: signaturePlacement,
+                dataUrl: signatureDataUrl,
+                zoom: zoomLevel // **修改：儲存 zoomLevel**
+            };
+            
+            // 移除指標之後的 "redo" 狀態
+            pdfHistory = pdfHistory.slice(0, pdfHistoryPointer + 1);
+            
+            pdfHistory.push(state);
+            pdfHistoryPointer++;
+            updatePdfUndoRedoButtons();
+        }
+        
+        // 更新 PDF 上一步/下一步按鈕
+        function updatePdfUndoRedoButtons() {
+            pdfUndoButton.disabled = pdfHistoryPointer <= 0;
+            pdfRedoButton.disabled = pdfHistoryPointer === pdfHistory.length - 1;
+        }
+
+        // PDF 上一步
+        pdfUndoButton.addEventListener('click', () => {
+            if (pdfHistoryPointer > 0) {
+                pdfHistoryPointer--;
+                const state = pdfHistory[pdfHistoryPointer];
+                signaturePlacement = state.placement;
+                signatureDataUrl = state.dataUrl;
+                zoomLevel = state.zoom; // **修改：恢復 zoomLevel**
+                renderPage(currentPageNum);
+                updatePdfUndoRedoButtons();
+            }
+        });
+
+        // PDF 下一步
+        pdfRedoButton.addEventListener('click', () => {
+            if (pdfHistoryPointer < pdfHistory.length - 1) {
+                pdfHistoryPointer++;
+                const state = pdfHistory[pdfHistoryPointer];
+                signaturePlacement = state.placement;
+                signatureDataUrl = state.dataUrl;
+                zoomLevel = state.zoom; // **修改：恢復 zoomLevel**
+                renderPage(currentPageNum);
+                updatePdfUndoRedoButtons();
+            }
+        });
+        
+        // 移除：簽名板 上一步
+        
+        // 移除：簽名板 下一步
+        
+        // --- 結束：歷史紀錄管理 ---
+
+        // 新增：更換簽名按鈕事件
+        newSignatureButton.addEventListener('click', openSignatureModal);
+
+        // 縮放按鈕監聽
+        zoomInButton.addEventListener('click', () => {
+            zoomLevel += 0.25;
+            // **修改：只重繪預覽，不重繪整個 PDF**
+            renderPage(currentPageNum); // 仍需重繪 PDF 以顯示新大小的簽名
+            savePdfState(); // 儲存縮放狀態
+        });
+
+        zoomOutButton.addEventListener('click', () => {
+            zoomLevel = Math.max(0.25, zoomLevel - 0.25); // 最小 25%
+            renderPage(currentPageNum); // 仍需重繪 PDF 以顯示新大小的簽名
+            savePdfState(); // 儲存縮放狀態
+        });
+        
+        // 視窗大小改變時，重新調整簽名板和 PDF 
+        window.addEventListener('resize', () => {
+            // 修正：只在簽名板可見時才重新初始化，避免在隱藏時讀到 0 寬高
+            if (signaturePad && signatureModal.style.display === 'flex') {
+                initializeSignaturePad(); // 重設簽名板大小
+            }
+            if (currentPdfPage) {
+                renderPage(currentPageNum); // 重新渲染 PDF 以適應新寬度
+            }
+        });
+
+    </script>
+</body>
+</html>
