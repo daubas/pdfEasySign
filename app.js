@@ -314,8 +314,9 @@ const Events = {
         const dataUrl = state.signaturePadInstance.toDataURL('image/png');
         updateState({
             signature: { ...state.signature, dataUrl },
-            ui: { ...state.ui, currentView: 'download', message: { text: 'Signature saved! You can adjust the position or download.', type: 'success' } },
+            ui: { ...state.ui, currentView: 'sign', message: { text: 'Signature saved! You can adjust the position or download.', type: 'success' } },
         });
+        UI.elements.downloadContainer.classList.remove('hidden'); // Explicitly show download button
         UI.closeSignatureModal();
         History.saveState();
         UI.renderPdfPage();
