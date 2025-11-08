@@ -166,6 +166,17 @@ input[type="text"]:focus {
     cursor: not-allowed;
 }
 
+#pdfZoomReset {
+    border: 1px solid #111;
+    padding: 0.5rem 0.75rem;
+    transition: all 0.2s ease-in-out;
+}
+
+#pdfZoomReset:hover {
+    background-color: var(--color-highlight);
+    color: #000;
+}
+
 #pageIndicator {
     font-family: var(--font-body);
     color: var(--color-text);
@@ -276,4 +287,8 @@ input[type="text"]:focus {
     position: absolute;
     left: 0;
     font-weight: bold;
+}
+
+.cursor-pointer {
+    cursor: pointer;
 }

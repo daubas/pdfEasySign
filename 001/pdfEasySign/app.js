@@ -13,8 +13,9 @@ const state = {
     currentPageNum: 1,
     totalPages: 0,
     currentPdfPage: null,
-    scale: 1.5,
-    annotations: [], // { id, type, data, placement, zoom, pageNum }
+    fitScale: 1.0, // The scale to fit the PDF page to the container width
+    pdfZoomLevel: 1.0, // The user-controlled zoom level of the PDF
+    annotations: [], // { id, type, data, placement: { pdfX, pdfY }, zoom, pageNum }
     selectedAnnotationId: null,
     currentAnnotationData: null, // Temp storage for placement data
     history: [],
@@ -39,6 +40,7 @@ function updateState(newState) {
 const UI = {
     elements: {
         uploadContainer: document.getElementById('uploadContainer'),
+        controlsAndPdfContainer: document.getElementById('controlsAndPdfContainer'),
         pdfContainer: document.getElementById('pdfContainer'),
         downloadContainer: document.getElementById('downloadContainer'),
         instructionsContainer: document.getElementById('instructionsContainer'),
@@ -55,6 +57,10 @@ const UI = {
         zoomInButton: document.getElementById('zoomInButton'),
         zoomOutButton: document.getElementById('zoomOutButton'),
         confirmPositionButton: document.getElementById('confirmPositionButton'),
+        pdfZoomInButton: document.getElementById('pdfZoomInButton'),
+        pdfZoomOutButton: document.getElementById('pdfZoomOutButton'),
+        pdfZoomReset: document.getElementById('pdfZoomReset'),
+        pdfZoomIndicator: document.getElementById('pdfZoomIndicator'),
     },
 
     showMessage(text, type = 'info') {
@@ -71,7 +77,7 @@ const UI = {
     render() {
         this.elements.uploadContainer.classList.toggle('hidden', state.ui.currentView !== 'upload');
         this.elements.instructionsContainer.classList.toggle('hidden', state.ui.currentView !== 'upload');
-        this.elements.pdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
+        this.elements.controlsAndPdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
         this.elements.downloadContainer.classList.toggle('hidden', !state.ui.showDownload);
         this.showMessage(state.ui.message.text, state.ui.message.type);
         this.elements.pdfUndoButton.disabled = state.historyPointer <= 0;
@@ -80,36 +86,52 @@ const UI = {
         this.elements.prevPageButton.disabled = state.currentPageNum <= 1;
         this.elements.nextPageButton.disabled = state.currentPageNum >= state.totalPages;
         this.elements.confirmPositionButton.disabled = state.selectedAnnotationId === null;
+        this.elements.pdfZoomIndicator.textContent = `${Math.round(state.pdfZoomLevel * 100)}%`;
     },
 
     async renderPdfPage(pageNum) {
         if (!state.pdfDoc) return;
         const page = await state.pdfDoc.getPage(pageNum);
         state.currentPdfPage = page;
+
         const containerWidth = this.elements.pdfContainer.clientWidth * 0.95;
-        const viewport = page.getViewport({ scale: containerWidth / page.getViewport({ scale: 1 }).width });
-        state.scale = viewport.scale;
+        const baseViewport = page.getViewport({ scale: 1 });
+        state.fitScale = containerWidth / baseViewport.width;
+        
+        const finalScale = state.fitScale * state.pdfZoomLevel;
+        const viewport = page.getViewport({ scale: finalScale });
+
         const context = this.elements.pdfCanvas.getContext('2d');
         this.elements.pdfCanvas.height = viewport.height;
         this.elements.pdfCanvas.width = viewport.width;
         await page.render({ canvasContext: context, viewport }).promise;
-        this.drawAnnotationsPreview(pageNum);
+        this.drawAnnotationsPreview(pageNum, finalScale);
     },
 
-    drawAnnotationsPreview(pageNum) {
+    drawAnnotationsPreview(pageNum, finalScale) {
         const context = this.elements.pdfCanvas.getContext('2d');
-        state.annotations.filter(ann => ann.pageNum === pageNum).forEach(ann => {
+        const pageAnnotations = state.annotations.filter(ann => ann.pageNum === pageNum);
+        if (!state.currentPdfPage) return;
+        const baseViewport = state.currentPdfPage.getViewport({ scale: 1 });
+
+        pageAnnotations.forEach(ann => {
             const sigImage = new Image();
             sigImage.onload = () => {
-                const width = 120 * ann.zoom;
-                const height = 60 * ann.zoom;
-                context.drawImage(sigImage, ann.placement.x, ann.placement.y, width, height);
+                // Convert normalized PDF coordinates back to current canvas coordinates
+                const canvasX = ann.placement.pdfX * baseViewport.width * finalScale;
+                const canvasY = ann.placement.pdfY * baseViewport.height * finalScale;
+
+                // Signature dimensions also need to scale with the PDF zoom
+                const sigWidth = 120 * ann.zoom * state.pdfZoomLevel;
+                const sigHeight = 60 * ann.zoom * state.pdfZoomLevel;
+
+                context.drawImage(sigImage, canvasX, canvasY, sigWidth, sigHeight);
 
                 if (ann.id === state.selectedAnnotationId) {
                     context.strokeStyle = 'rgba(0, 123, 255, 0.9)';
                     context.lineWidth = 2;
                     context.setLineDash([5, 5]);
-                    context.strokeRect(ann.placement.x - 5, ann.placement.y - 5, width + 10, height + 10);
+                    context.strokeRect(canvasX - 5, canvasY - 5, sigWidth + 10, sigHeight + 10);
                     context.setLineDash([]);
                 }
             };
@@ -151,17 +173,23 @@ const PDF = {
             const pageToSign = pdfDoc.getPages()[ann.pageNum - 1];
             if (!pageToSign) continue;
             const { width: pageWidth, height: pageHeight } = pageToSign.getSize();
-            const page = await state.pdfDoc.getPage(ann.pageNum);
-            const viewport = page.getViewport({ scale: state.scale });
-            const scaleX = pageWidth / viewport.width;
-            const scaleY = pageHeight / viewport.height;
-
+            
             const sigImage = await pdfDoc.embedPng(ann.data);
+            
+            // The stored coordinates are already normalized (0 to 1), so we just multiply by the page dimensions.
+            const x = ann.placement.pdfX * pageWidth;
+            const y = pageHeight - (ann.placement.pdfY * pageHeight); // PDF-lib's y-axis is bottom-up
+
+            // We need to define signature dimensions in PDF points (e.g., 1 point = 1/72 inch)
+            // Let's assume a standard width and scale it by the signature's own zoom.
+            const sigWidthPoints = 90 * ann.zoom;
+            const sigHeightPoints = sigWidthPoints / 2; // Maintain aspect ratio
+
             pageToSign.drawImage(sigImage, {
-                x: ann.placement.x * scaleX,
-                y: pageHeight - (ann.placement.y * scaleY) - (60 * ann.zoom * scaleY),
-                width: 120 * ann.zoom * scaleX,
-                height: 60 * ann.zoom * scaleY,
+                x: x,
+                y: y - sigHeightPoints, // Adjust y because drawImage's origin is bottom-left
+                width: sigWidthPoints,
+                height: sigHeightPoints,
             });
         }
         return await pdfDoc.save();
@@ -215,7 +243,7 @@ const Events = {
             updateState({ ...state, ui: { ...state.ui, message: { text: '請選擇一個 PDF 檔案。', type: 'error' } } });
             return;
         }
-        updateState({ ...state, ui: { ...state.ui, message: { text: '正在載入 PDF...', type: 'loading' }, showDownload: false } });
+        updateState({ ...state, ui: { ...state.ui, message: { text: '正在載入 PDF...', type: 'loading' } }, pdfZoomLevel: 1.0, showDownload: false });
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
@@ -240,13 +268,23 @@ const Events = {
         reader.readAsArrayBuffer(file);
     },
 
-    findAnnotationAt(x, y) {
+    findAnnotationAt(canvasX, canvasY) {
+        if (!state.currentPdfPage) return null;
+        const finalScale = state.fitScale * state.pdfZoomLevel;
+        const baseViewport = state.currentPdfPage.getViewport({ scale: 1 });
+
+        // Convert canvas click coordinates to normalized PDF coordinates
+        const pdfX = canvasX / (baseViewport.width * finalScale);
+        const pdfY = canvasY / (baseViewport.height * finalScale);
+
         const currentPageAnnotations = state.annotations.filter(ann => ann.pageNum === state.currentPageNum);
         for (const ann of [...currentPageAnnotations].reverse()) {
-            const width = 120 * ann.zoom;
-            const height = 60 * ann.zoom;
-            if (x >= ann.placement.x && x <= ann.placement.x + width &&
-                y >= ann.placement.y && y <= ann.placement.y + height) {
+            // Define signature dimensions in normalized PDF space
+            const sigWidthNormalized = (120 * ann.zoom * state.pdfZoomLevel) / (baseViewport.width * finalScale);
+            const sigHeightNormalized = (60 * ann.zoom * state.pdfZoomLevel) / (baseViewport.height * finalScale);
+
+            if (pdfX >= ann.placement.pdfX && pdfX <= ann.placement.pdfX + sigWidthNormalized &&
+                pdfY >= ann.placement.pdfY && pdfY <= ann.placement.pdfY + sigHeightNormalized) {
                 return ann;
             }
         }
@@ -256,38 +294,36 @@ const Events = {
     handleCanvasClick(e) {
         if (!state.currentPdfPage) return;
         const rect = UI.elements.pdfCanvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const canvasX = e.clientX - rect.left;
+        const canvasY = e.clientY - rect.top;
 
-        const clickedAnnotation = this.findAnnotationAt(x, y);
+        const clickedAnnotation = this.findAnnotationAt(canvasX, canvasY);
 
         if (clickedAnnotation) {
-            // Case 1: Clicked on an existing annotation. Select it.
-            updateState({
-                ...state,
-                selectedAnnotationId: clickedAnnotation.id,
-                ui: { ...state.ui, message: { text: '已選取簽名。請點擊新位置來移動，或點擊「確認位置」。', type: 'info' } }
-            });
+            updateState({ ...state, selectedAnnotationId: clickedAnnotation.id });
             UI.renderPdfPage(state.currentPageNum);
             return;
         }
 
-        // Case 2: Clicked on the background.
+        const finalScale = state.fitScale * state.pdfZoomLevel;
+        const baseViewport = state.currentPdfPage.getViewport({ scale: 1 });
+        const pdfX = canvasX / (baseViewport.width * finalScale);
+        const pdfY = canvasY / (baseViewport.height * finalScale);
+
         if (state.selectedAnnotationId) {
-            // If an annotation is selected, move it to the new click position.
             const selectedAnnotation = state.annotations.find(a => a.id === state.selectedAnnotationId);
             if (selectedAnnotation) {
-                const width = 120 * selectedAnnotation.zoom;
-                const height = 60 * selectedAnnotation.zoom;
-                selectedAnnotation.placement.x = x - width / 2;
-                selectedAnnotation.placement.y = y - height / 2;
+                const sigWidthNormalized = (120 * selectedAnnotation.zoom * state.pdfZoomLevel) / (baseViewport.width * finalScale);
+                const sigHeightNormalized = (60 * selectedAnnotation.zoom * state.pdfZoomLevel) / (baseViewport.height * finalScale);
+                
+                selectedAnnotation.placement.pdfX = pdfX - sigWidthNormalized / 2;
+                selectedAnnotation.placement.pdfY = pdfY - sigHeightNormalized / 2;
                 
                 UI.renderPdfPage(state.currentPageNum);
                 History.saveState();
             }
         } else {
-            // If nothing is selected, create a new signature.
-            state.currentAnnotationData = { placement: { x, y }, pageNum: state.currentPageNum };
+            state.currentAnnotationData = { placement: { pdfX, pdfY }, pageNum: state.currentPageNum };
             UI.openSignatureModal();
         }
     },
@@ -298,7 +334,7 @@ const Events = {
             id: Date.now(),
             type: 'drawing',
             data: state.signaturePadInstance.toDataURL('image/png'),
-            placement: state.currentAnnotationData.placement,
+            placement: state.currentAnnotationData.placement, // Already in { pdfX, pdfY }
             zoom: 1.0,
             pageNum: state.currentAnnotationData.pageNum,
         };
@@ -306,7 +342,7 @@ const Events = {
             ...state,
             annotations: [...state.annotations, newAnnotation],
             selectedAnnotationId: newAnnotation.id,
-            ui: { ...state.ui, showDownload: true, message: { text: '簽名已放置，請調整位置或點擊「確認位置」。', type: 'info' } },
+            ui: { ...state.ui, showDownload: true, message: { text: '簽名已放置。', type: 'info' } },
         });
         UI.closeSignatureModal();
         UI.renderPdfPage(state.currentPageNum);
@@ -362,6 +398,17 @@ const Events = {
         History.saveState();
     },
 
+    handlePdfZoom(direction) {
+        let newZoom = state.pdfZoomLevel;
+        if (direction === 'in') {
+            newZoom += 0.25;
+        } else {
+            newZoom = Math.max(0.25, newZoom - 0.25);
+        }
+        updateState({ ...state, pdfZoomLevel: newZoom });
+        UI.renderPdfPage(state.currentPageNum);
+    },
+
     handleConfirmPosition() {
         updateState({
             ...state,
@@ -377,7 +424,7 @@ const Events = {
     },
 
     bind() {
-        const { pdfCanvas, prevPageButton, nextPageButton, zoomInButton, zoomOutButton, confirmPositionButton } = UI.elements;
+        const { pdfCanvas, prevPageButton, nextPageButton, zoomInButton, zoomOutButton, confirmPositionButton, pdfZoomInButton, pdfZoomOutButton, pdfZoomReset } = UI.elements;
         const uploadInput = document.getElementById('pdfUpload');
         const downloadButton = document.getElementById('downloadButton');
         const undoButton = document.getElementById('pdfUndoButton');
@@ -395,6 +442,12 @@ const Events = {
         nextPageButton.addEventListener('click', () => this.handlePageChange('next'));
         zoomInButton.addEventListener('click', () => this.handleZoom('in'));
         zoomOutButton.addEventListener('click', () => this.handleZoom('out'));
+        pdfZoomInButton.addEventListener('click', () => this.handlePdfZoom('in'));
+        pdfZoomOutButton.addEventListener('click', () => this.handlePdfZoom('out'));
+        pdfZoomReset.addEventListener('click', () => {
+            updateState({ ...state, pdfZoomLevel: 1.0 });
+            UI.renderPdfPage(state.currentPageNum);
+        });
         confirmPositionButton.addEventListener('click', this.handleConfirmPosition.bind(this));
         
         clearSigButton.addEventListener('click', () => state.signaturePadInstance.clear());
