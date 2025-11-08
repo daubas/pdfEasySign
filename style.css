@@ -193,6 +193,12 @@ input[type="text"]:focus {
     padding: 0.75rem;
     border-radius: 0.5rem;
     border: 1px solid var(--color-border);
+    /* FIX: Add flex properties for alignment */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem; /* 8px */
 }
 
 #zoomControls button {
@@ -200,6 +206,9 @@ input[type="text"]:focus {
     border: 1px solid var(--color-border);
     color: var(--color-text);
     transition: all 0.2s ease-in-out;
+    /* FIX: Ensure consistent sizing */
+    min-width: 40px;
+    padding: 0.5rem;
 }
 
 #zoomControls button:hover {
@@ -211,6 +220,33 @@ input[type="text"]:focus {
 #zoomControls button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+/* NEW: Instructions List Style */
+.instructions-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 1.5rem auto;
+    max-width: 400px;
+    text-align: left;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.5rem;
+    background-color: rgba(13, 17, 23, 0.5);
+}
+
+.instructions-list li {
+    margin-bottom: 0.75rem;
+    padding-left: 1.5rem;
+    position: relative;
+}
+
+.instructions-list li::before {
+    content: '»';
+    color: var(--color-accent);
+    position: absolute;
+    left: 0;
+    font-weight: bold;
 }
 
 /* PDF Canvas & Signature Pad */

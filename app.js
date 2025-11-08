@@ -47,6 +47,7 @@ const UI = {
         uploadContainer: document.getElementById('uploadContainer'),
         pdfContainer: document.getElementById('pdfContainer'),
         downloadContainer: document.getElementById('downloadContainer'),
+        instructionsContainer: document.getElementById('instructionsContainer'), // Added
         pdfCanvas: document.getElementById('pdfCanvas'),
         pdfMessage: document.getElementById('pdfMessage'),
         messageArea: document.getElementById('messageArea'),
@@ -78,6 +79,7 @@ const UI = {
     render() {
         // Show/hide main containers based on state
         this.elements.uploadContainer.classList.toggle('hidden', state.ui.currentView !== 'upload');
+        this.elements.instructionsContainer.classList.toggle('hidden', state.ui.currentView !== 'upload'); // Added
         this.elements.pdfContainer.classList.toggle('hidden', state.ui.currentView !== 'sign');
         
         // **MODIFIED**: Control download container based on its specific state flag
